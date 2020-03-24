@@ -93,7 +93,9 @@ function sir_adj(u,p,t)
     A[2,3]=-β*I*S/N^2
 
     A[3,2]=γ
-    du=-A'*u - g
+    du=-A'*u
+    du[2]=du[2]-g[2]
+    return du
 end
 
 function force(u)
