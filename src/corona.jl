@@ -1,21 +1,25 @@
+__precompile__()
 module corona
 
-export extract
 using CSV
 using DataFrames
 using Dates
 using TimeSeries
 using DifferentialEquations
 using LinearAlgebra
+using JLD2
+using Plots
+using LaTeXStrings
 function read(dataset::String,data="/home/jls/data/COVID-19/csse_covid_19_data/csse_covid_19_time_series/")
     if dataset=="Confirmed"
-        Confirmed=CSV.read(data*"time_series_19-covid-Confirmed.csv");
+        #        Confirmed=CSV.read(data*"time_series_19-covid-Confirmed.csv");
+        Confirmed=CSV.read(data*"time_series_covid19_confirmed_global.csv");
     elseif dataset=="Recovered"
         Recovered=CSV.read(data*"time_series_19-covid-Recovered.csv")
     elseif dataset=="Deaths"
-        Deaths=CSV.read(data*"time_series_19-covid-Deaths.csv")
+        Deaths=CSV.read(data*"time_series_covid19_deaths_global.csv")
     else
-        throw(ArgumentError("no datset: $dataset"))
+        Unknown=CSV.read(data*dataset)
     end
 end
 function datarange(ds::DataFrame)
@@ -46,112 +50,200 @@ end
 
 # %%
 function growth(u,Δ=10,Ω=0)
-#    (
-#    log10(u[end])-log10(u[end-Δ])
-#    )/Δ
     t=0:Δ
     P=[ones(length(t)) t]
-    c=P\log10.(u[end - Ω .- t])
-    -c[2]
+    if ndims(u) == 1
+        c=P\log10.(u[end - Ω .- t])
+        -c[2]
+    elseif ndims(u) == 2
+        c=P\log10.(u[end - Ω .- t,:])
+        -c[2,:]
+    end
 end
 # %%
-function trend(C,N=30)
-    g=zeros(N+1)
+function trend(C,Δ=10,N=30)
+    nt,nc=size(C)
     ΔD=timestamp(C[end-N])[1]:Day(1):timestamp(C[end])[1]
-    for    Ω=0:N
-        g[end-Ω] = growth(values(C),7,Ω)
+    Countries=String.(colnames(C))
+    if ndims(C) == 1
+        g=zeros(N+1)
+        for    Ω=0:N
+            g[end-Ω] = growth(values(C),Δ,Ω)
+        end
+    elseif ndims(C) == 2
+        g=zeros(N+1,nc)
+        for    Ω=0:N
+            g[end-Ω,:] = growth(values(C),Δ,Ω)'
+        end
     end
-    return TimeArray(ΔD,log10(2)./g,colnames(C))
+    return  TimeArray(ΔD,g,Countries)
 end
 
 
 
-"Classic Epedemic Model  Hethcote (2000)"
-function sir!(du,u,p,t)
-    N=sum(u[1:3])
-    it=Int(round(t)+1)
-    β,γ=p[it,1:2]
-    # contact rate, average infectous period
-    S,I,R=u[1:3]
+"Classic Epedemic Model  Hethcote (2000), added deaths"
+function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Float64)
+    it=Int(floor(t)+1)
+    Δt=t-floor(t)
+    if it == 1
+        β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+    else
+        β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
+    end
+    S,I,R,D=u[1:4]
+    N=S+I+R+D
     du[1]=-β*I*S/N
-    du[2]= β*I*S/N - γ*I
+    du[2]= β*I*S/N - (γ+δ)*I
     du[3]= γ*I
+    du[4]= δ*I
+    du
 end
-function sir_adj(u,p,t)
-    it=Int(round(t)+1)
-    N=sum(p[it,1:3])
-    S,I,R=p[it,1:3]
-    g=p[it,4:6]
-    β,γ=p[it,7:8]
-    A=zeros(3,3)
-    A[1,1]=-β*I/N
-    A[1,2]=-β*S/N
+
+function dfdu(p::Array{Float64,2},t::Float64)
+    it=Int(floor(t)+1)
+    Δt=t-floor(t)
+    nt,ne=size(p)
+    if it == nt
+        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
+    elseif it == 1
+        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+    else
+        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
+    end
+    N=S+I+R+D
+    A=zeros(4,4)
+    A[1,1]=-β*I*(N+S)/N^2
+    A[1,2]=-β*S*(N+I)/N^2
     A[1,3]=+β*I*S/N^2
+    A[1,4]=+β*I*S/N^2
 
-    A[2,1]= β*I/N
-    A[2,2]= β*S/N - γ
+    A[2,1]= β*I*(N+S)/N^2
+    A[2,2]= β*S*(N+I)/N^2 - (γ+δ)
     A[2,3]=-β*I*S/N^2
-
+    A[2,4]=-β*I*S/N^2
+    
     A[3,2]=γ
-    du=-A'*u
-    du[2]=du[2]-g[2]
-    return du
+    A[4,2]=δ
+    return A
 end
 
-function force(u)
-    N=sum(u,dims=2)
+
+function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
+    it=Int(floor(t)+1)
+    Δt=t-floor(t)
+    nt,ne=size(p)
+    if it == nt
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
+    elseif it == 1
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+    else
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
+    end
+
+    A=dfdu(p,t)
+    # Observations
+    OBS=[0 0;1 0;1 0;1 1]
+    # weights
+    g=((OBS'*[S,I,R,D] - [Cₓ,Dₓ])' * OBS')'
+
+    dv= -A'*v -g 
+    
+    return dv
+end
+
+function dfda(u::Array{Float64,2})
     S=u[:,1]
     I=u[:,2]
     R=u[:,3]
-    f=zeros(length(S),3,2)
+    D=u[:,4]
+    N=S+I+R+D
+    f=zeros(length(S),4,3)
     f[:,1,1]=-I.*S./N
+    f[:,1,2].= 0.0
+    f[:,1,3].= 0.0
+
     f[:,2,1]= I.*S./N
     f[:,2,2]=-I
+    f[:,2,3]=-I
+
+    f[:,3,1].=0.0
     f[:,3,2]= I
+    f[:,3,3].=0.0
+
+    f[:,4,1].=0.0
+    f[:,4,2].=0.0
+    f[:,4,3]= I
+    
     return f
 end
 
 
-function forward(β,γ,u₀,tspan=(0.0,50.0))
-    p=[β γ]
+function forward(β,γ,δ,u₀,tspan)
+    p=[β γ δ]
     problem=ODEProblem(sir!,u₀,tspan,p)
     solution=solve(problem)
     u=collect(solution(0:tspan[2])')
 end
-function backward(u,uₓ,β,γ,tspan=(50.0,0.0))
+function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0))
     nt,ne=size(u)
-    g=u .- uₓ[1:nt,:]
-    p=[u g β[1:nt] γ[1:nt]]
-    v₀=[0.0 ,0.0, 0.0]
+    p=[u β[1:nt] γ[1:nt] δ[1:nt] uₓ]
+    v₀=[0.0 ,0.0, 0.0, 0.0]
     adj=ODEProblem(corona.sir_adj,v₀,tspan,p)
     adj_sol=solve(adj)
-    as=collect(adj_sol(0:tspan[1])')
+    v=collect(adj_sol(0:tspan[1])')
 end
-function update(u,as,α,β,γ)
+function update(u,v,α,β,γ,δ)
     nt,ne=size(u)
-    f=force(u)
-    δβ=f[:,1,1].*as[:,1]+f[:,2,1].*as[:,2]+f[:,3,1].*as[:,3]
-    δγ=f[:,1,2].*as[:,1]+f[:,2,2].*as[:,2]+f[:,3,2].*as[:,3]
+    f=dfda(u)
+    δβ=zeros(nt)
+    δγ=zeros(nt)
+    δδ=zeros(nt)
+    for i=1:4
+        δβ=δβ+ v[:,i] .* f[:,i,1]
+        δγ=δγ+ v[:,i] .* f[:,i,2]
+        δδ=δδ+ v[:,i] .* f[:,i,3]
+    end
     βₙ=copy(β)
     γₙ=copy(γ)
+    δₙ=copy(δ)
     βₙ[1:nt]=β[1:nt]-α*δβ
-    γₙ[1:nt]=γ[1:nt]+α*δγ
-    βₙ[nt+1:end] .=βₙ[nt]
-    γₙ[nt+1:end] .=γₙ[nt]
-    βₙ,γₙ
+    γₙ[1:nt]=γ[1:nt]-α*δγ
+    δₙ[1:nt]=δ[1:nt]-α*δδ
+    βₙ[nt+1:end] .=βₙ[nt-1]
+    γₙ[nt+1:end] .=γₙ[nt-1]
+    δₙ[nt+1:end] .=δₙ[nt-1]
+#    βₙ,γₙ,δₙ
+    abs.(βₙ),abs.(γₙ),abs.(δₙ)
 end
 
-function linesearch(β,γ,a,uₓ,u₀,tspan,α=1.0e-12)
-    J=zeros(500,2)
-    u=corona.forward(β,γ,u₀)
-    actual=norm(uₓ-u)
-    for i=1:500
-        β₁,γ₁=corona.update(u,a,i*α,β,γ)
-        u₁=corona.forward(β₁,γ₁,u₀,tspan)
-        global J[i,:]=[i*α norm(uₓ-u₁)]
+function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
+                    α=1.0e-12,itMax=1024)
+    u=corona.forward(β,γ,δ,u₀,tspan)
+    function probe(α)
+        β₁,γ₁,δ₁=update(u,v,α,β,γ,δ)
+        u₁=forward(β₁,γ₁,δ₁,u₀,tspan)
+        I=u₁[:,2]
+        R=u₁[:,3]
+        D=u₁[:,4]
+        Cₓ=uₓ[:,1]
+        Dₓ=uₓ[:,2]
+        C=I+R+D
+        norm([C;D]-[Cₓ;Dₓ])
     end
-    α₁=argmin(J[:,2])*α
-    β₁,γ₁=corona.update(u,a,α₁,β,γ)
+    J=zeros(itMax+1,2)
+#    for i=0:itMax
+#        Δ=Float64(i)*α
+#        global J[i+1,:]=[Δ probe(Δ)]
+#    end
+    Δ=α*sort(rand(itMax+1))
+    for  i=1:itMax+1
+        global J[i,:]=[Δ[i] probe(Δ[i])]
+    end
+    α₁=J[argmin(J[:,2]),1]
+#    dbg=plot(J[:,1],J[:,2],title=    L"α $α₁")
+#    dbg=scatter!([α₁],[minimum(J[:,2])])
+#    display(dbg)
+    @save "linesearch.jld2" α J
+    β₁,γ₁=update(u,v,α₁,β,γ,δ)
 end
-
 end
