@@ -1,4 +1,4 @@
-using corona
+busing corona
 using Plots 
 using JLD2
 using DifferentialEquations
@@ -12,49 +12,36 @@ using LaTeXStrings
 ############################################################
 rootdir="/home/jls/prog/corona/"
 cd(rootdir)
-Population_0=CSV.read(rootdir*"data/population.csv",header=false);
-Countries=String.(Population_0[:Column1])
-Confirmed=Float64.(corona.merge_datasets(corona.read("Confirmed"),Countries))
-Deaths=   Float64.(corona.merge_datasets(corona.read("Deaths"),Countries));
-Trend=corona.trend(Confirmed,14,40)
-Growths=Trend[end]
+
+Cases=readtimearray("data/bayern.csv",header=false)
+Confirmed=Cases[:B]
+Deaths=Cases[:C]
+DataTime=timestamp(Cases)
 ###########################################
-S₀=Float64(Population_0[Population_0[!,:Column1].=="United Kingdom",:][!,:Column2][1])
-Today=Dates.today()
-FirstDate=timestamp(Deaths)[1]
-@load "data/outbreak.jld2" Outbreak
-FirstDate=Outbreak[Symbol("United Kingdom")]
-LastDate=timestamp(Deaths)[end]
-DataTime=FirstDate:Day(1):LastDate
-u₀=[S₀,Float64(values(Confirmed[Symbol("United Kingdom")][FirstDate])[1]),0.0,0.0]
+S₀=13076721.0
+u₀=[S₀,values(Confirmed[1])[1],0.0,values(Deaths[1])[1]]
 tspan=(0.0,Float64(length(DataTime))-1)
 NDays=400
 β₀=1/4*ones(NDays+10)
 γ₀=1/7*ones(NDays+10)
 δ₀=0.001*1/7*ones(NDays+10);
-uₓ=values(merge(Confirmed[Symbol("United Kingdom")],Deaths[Symbol("United Kingdom")])[DataTime]);
-##
-SimulRange=FirstDate:Day(1):FirstDate+Day(NDays)
-tsimul=(0.0,Float64(NDays))
-u₈=corona.forward(β₀,γ₀,δ₀,u₀,tsimul)
-Simul=plot(DataTime, uₓ,lw=3)
-Simul=plot(SimulRange, u₈)
-plot(Confirmed,legend=:topleft,lw=3)
-savefig("figs/Confirmed.pdf")
-plot(Trend,lw=3)
-savefig("figs/Trend_avg.pdf")
+uₓ=[values(Confirmed) values(Deaths)]
 ##
 β,γ,δ=β₀,γ₀,δ₀
-γ=γ₀/2
 u=corona.forward(β,γ,δ,u₀,tspan)
 Cₓ=uₓ[:,1]
 Dₓ=uₓ[:,2]
 J=[norm([Cₓ;Dₓ]-[u[:,2]+u[:,3]+u[:,4];u[:,4]])/norm([Cₓ;Dₓ])]
+plot(DataTime,u[:,2],lw=3,color=:red)
+plot!(DataTime,u[:,3],lw=3,color=:green)
+plot!(DataTime,u[:,4],lw=3,color=:black)
+scatter!(DataTime,uₓ[:,1],color=:orange)
+scatter!(DataTime,u[:,4],lw=3,color=:black)
 
 
 α=1.0e-12
-@load "data/United_Kingdom_model_parameters.jld" 
-for i=1:10000
+#@load "data/Bavaria_model_parameters.jld" 
+for i=1:50000
     global u
     a=corona.backward(u,uₓ,β,δ,γ,reverse(tspan))
     global β,γ,δ
@@ -73,30 +60,29 @@ for i=1:10000
         global J=[J; norm([Cₓ;Dₓ]-[u[:,2]+u[:,3]+u[:,4];u[:,4]])/norm([Cₓ;Dₓ])]
         println(i," ",J[end])
         global P=scatter(DataTime,uₓ[:,1],legend=:topleft,
-                         label="Confirmed",color=:orange,title="United Kingdom")
+                         label="Confirmed",color=:orange,title="Bavaria")
         P=scatter!(DataTime,uₓ[:,2],label="Deaths",color=:black,lw=3)
         P=plot!(DataTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
         P=plot!(DataTime,u[:,2],label="I",color=:red,lw=3)
         P=plot!(DataTime,u[:,3],label="R",color=:green,lw=3)
         P=plot!(DataTime,u[:,4],label="D",color=:black,lw=3)
         display(P)
-        savefig("figs/United_Kingdom.pdf")
+        savefig("figs/Bavaria.pdf")
         global lP=scatter(DataTime,uₓ[:,1],legend=:topleft,
-                         label="Confirmed",color=:orange,title="United Kingdom",yaxis=:log10)
+                         label="Confirmed",color=:orange,title="Bavaria",yaxis=:log10)
         lP=scatter!(DataTime,uₓ[:,2] .+1,label="Deaths",color=:black,lw=3)
         lP=plot!(DataTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
         lP=plot!(DataTime,u[:,2] .+1,label="I",color=:red,lw=3)
         lP=plot!(DataTime,u[:,3] .+1.0,label="R",color=:green,lw=3)
         lP=plot!(DataTime,u[:,4] .+1.0,label="D",color=:black,lw=3)
-        savefig(lP,"figs/United_Kingdom_log.pdf")
-        FirstDay=FirstDate
-        @save "data/United_Kingdom_model_parameters.jld" FirstDay β γ δ J
+        savefig(lP,"figs/Bavaria_log.pdf")
+        @save "data/Bavaria_model_parameters.jld"  β γ δ J
         pP=plot(DataTime,β[1:length(DataTime)],label=L"\beta",legend=:left,
-                lw=3,title="United Kingdom",color=:red)
+                lw=3,title="Bavaria",color=:red)
         pP=plot!(DataTime,γ[1:length(DataTime)],label=L"\gamma",lw=3,color=:green)
         pP=plot!(DataTime,δ[1:length(DataTime)],label=L"\delta",lw=3,color=:black)
         display(pP)
-        savefig(pP,"figs/United_Kingdom_parameters3.pdf")
+        savefig(pP,"figs/Bavaria_parameters3.pdf")
    end
 end
 SIM=DataFrame()
@@ -108,32 +94,32 @@ SIM.D=u[:,4]
 SIM.β=β[1:length(DataTime)]
 SIM.γ=γ[1:length(DataTime)]
 SIM.δ=δ[1:length(DataTime)]
-United Kingdom=TimeArray(SIM,timestamp=:dates) 
-@save "data/United_Kingdom_final.jld" United Kingdom
-@save "data/United_Kingdom_model_parameters.jld" β γ δ
-savefig(P,"figs/United_Kingdom.pdf")
-savefig(lP,"figs/United_Kingdom_log.pdf")
+Bavaria=TimeArray(SIM,timestamp=:dates) 
+@save "data/Bavaria_final.jld" Bavaria
+@save "data/Bavaria_model_parameters.jld" β γ δ
+savefig(P,"figs/Bavaria.pdf")
+savefig(lP,"figs/Bavaria_log.pdf")
 n=(1:length(J))*100
-plot(n,J,xlabel="Iterations",ylabel="J",yaxis=:log10,leg=false,lw=3,title="United Kingdom")
-savefig("figs/United_Kingdom_convergence.pdf")
+plot(n,J,xlabel="Iterations",ylabel="J",yaxis=:log10,leg=false,lw=3,title="Bavaria")
+savefig("figs/Bavaria_convergence.pdf")
 pP=plot(DataTime,β[1:length(DataTime)],label=L"\beta",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
+        lw=3,title="Bavaria",color=:red)
 pP=plot!(DataTime,γ[1:length(DataTime)],label=L"\gamma",lw=3,color=:green)
 pP=plot!(DataTime,δ[1:length(DataTime)],label=L"\delta",lw=3,color=:black)
 display(pP)
-savefig(pP,"figs/United_Kingdom_parameters3.pdf")
+savefig(pP,"figs/Bavaria_parameters3.pdf")
 pP=plot(DataTime,β[1:length(DataTime)],label=L"\beta",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
+        lw=3,title="Bavaria",color=:red)
 pP=plot!(DataTime,γ[1:length(DataTime)],label=L"\gamma",lw=3,color=:green)
-savefig(pP,"figs/United_Kingdom_parameters.pdf")
+savefig(pP,"figs/Bavaria_parameters.pdf")
 σ=β./γ;
 pS=plot(DataTime,σ[1:length(DataTime)],label=L"\sigma",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
-savefig(pS,"figs/United_Kingdom_Sigma.pdf")
+        lw=3,title="Bavaria",color=:red)
+savefig(pS,"figs/Bavaria_Sigma.pdf")
 μ=δ./γ
 pM=plot(DataTime,μ[1:length(DataTime)],label=L"\mu",legend=:left,
-        lw=3,title="United Kingdom",color=:black)
-savefig(pM,"figs/United_Kingdom_Mortality.pdf")
+        lw=3,title="Bavaria",color=:black)
+savefig(pM,"figs/Bavaria_Mortality.pdf")
 
 
 

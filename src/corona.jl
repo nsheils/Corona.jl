@@ -83,7 +83,7 @@ end
 
 "Classic Epedemic Model  Hethcote (2000), added deaths"
 function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Float64)
-    it=Int(floor(t)+1)
+    it=Int(floor(t)+1.0)
     Δt=t-floor(t)
     if it == 1
         β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
@@ -133,11 +133,11 @@ function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
     Δt=t-floor(t)
     nt,ne=size(p)
     if it == nt
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it,:] -p[it-1,:])
     elseif it == 1
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it+1,:] -p[it,:])
     else
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
 
     A=dfdu(p,t)
@@ -184,9 +184,9 @@ function forward(β,γ,δ,u₀,tspan)
     solution=solve(problem)
     u=collect(solution(0:tspan[2])')
 end
-function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0))
+function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0),window=ones(size(u)[1]))
     nt,ne=size(u)
-    p=[u β[1:nt] γ[1:nt] δ[1:nt] uₓ]
+    p=[u β[1:nt] γ[1:nt] δ[1:nt] uₓ window]
     v₀=[0.0 ,0.0, 0.0, 0.0]
     adj=ODEProblem(corona.sir_adj,v₀,tspan,p)
     adj_sol=solve(adj)
