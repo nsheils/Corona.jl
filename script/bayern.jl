@@ -1,4 +1,4 @@
-busing corona
+using corona
 using Plots 
 using JLD2
 using DifferentialEquations
@@ -39,10 +39,11 @@ scatter!(DataTime,uₓ[:,1],color=:orange)
 scatter!(DataTime,u[:,4],lw=3,color=:black)
 
 
-α=1.0e-12
-#@load "data/Bavaria_model_parameters.jld" 
-for i=1:50000
+α=1.0e-11
+@load "data/Bavaria_model_parameters.jld" 
+for i=1:200000
     global u
+    global a
     a=corona.backward(u,uₓ,β,δ,γ,reverse(tspan))
     global β,γ,δ
     β,γ,δ=corona.linesearch(β,γ,δ,a,uₓ,u₀,tspan,α,100)
@@ -91,6 +92,10 @@ SIM.S=u[:,1]
 SIM.I=u[:,2]
 SIM.R=u[:,3]
 SIM.D=u[:,4]
+SIM.Sa=a[:,1]
+SIM.Ia=a[:,2]
+SIM.Ra=a[:,3]
+SIM.Da=a[:,4]
 SIM.β=β[1:length(DataTime)]
 SIM.γ=γ[1:length(DataTime)]
 SIM.δ=δ[1:length(DataTime)]
