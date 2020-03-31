@@ -136,11 +136,11 @@ function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
     Δt=t-floor(t)
     nt,ne=size(p)
     if it == nt
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it,:] -p[it-1,:])
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it,:] -p[it-1,:])
     elseif it == 1
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it+1,:] -p[it,:])
     else
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,W=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
+        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
 
     A=dfdu(p,t)
@@ -149,7 +149,7 @@ function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
     # weights
     g=((OBS'*[S,I,R,D] - [Cₓ,Dₓ])' * OBS')'
 
-    dv= -A'*v -g 
+    dv= -A'*v -g.*window 
     
     return dv
 end
@@ -217,7 +217,7 @@ function update(u,v,α,β,γ,δ)
 end
 
 function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
-                    α=1.0e-12,itMax=1024)
+                    α=1.0e-12,itMax=1024,window=ones(size(u)[1]))
     u=corona.forward(β,γ,δ,u₀,tspan)
     function probe(α)
         β₁,γ₁,δ₁=update(u,v,α,β,γ,δ)
@@ -228,7 +228,7 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
         Cₓ=uₓ[:,1]
         Dₓ=uₓ[:,2]
         C=I+R+D
-        norm([C;D]-[Cₓ;Dₓ])
+        norm([C .* window;D .* window]-[Cₓ .* window;Dₓ .* window])
     end
     J=zeros(itMax+1,2)
 #    for i=0:itMax
@@ -243,7 +243,7 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
 #    dbg=plot(J[:,1],J[:,2],title=    L"α $α₁")
 #    dbg=scatter!([α₁],[minimum(J[:,2])])
 #    display(dbg)
-    @save "linesearch.jld2" α J
+#    @save "linesearch.jld2" α J
     β₁,γ₁=update(u,v,α₁,β,γ,δ)
 end
 function extrapolate(y,Δx=1.0)
