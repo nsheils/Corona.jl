@@ -85,8 +85,11 @@ end
 function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Float64)
     it=Int(floor(t)+1.0)
     Δt=t-floor(t)
+    nt,ne=size(p)
     if it == 1
         β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
+    elseif it == nt
+        β,γ,δ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
     else
         β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
@@ -243,4 +246,19 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
     @save "linesearch.jld2" α J
     β₁,γ₁=update(u,v,α₁,β,γ,δ)
 end
+function extrapolate(y,Δx=1.0)
+    y⁰=y[end]
+    y¹= [1/2,-2,3/2]'*y[end-2:end]
+    y²= [-1, 4,-5,2]'*y[end-3:end]
+    y⁰ + y¹*Δx + + y²*Δx^2/2
+end
+export smooth
+function smooth(y,Δx=1.0)
+    f⁰=(circshift(y,-1) +   2*y +circshift(y,1))/4
+    f⁰[1]=y[1]
+    f⁰[end]=y[end]
+    return f⁰
+end
+
+
 end
