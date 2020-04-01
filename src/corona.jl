@@ -65,8 +65,8 @@ function deaths(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Coro
     TimeSeries.rename(Deaths,Country => :Deaths)
 end
 function outbreak(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
-    A=CSV.read(rootdir*"raw/outbreak.csv")
-    A[A[!,:Country].==String(Country),:][2]
+    D=confirmed(Country,rootdir)
+    timestamp(D[D.>0])[1]
 end
 
 
@@ -270,11 +270,12 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
         global J[i,:]=[Δ[i] probe(Δ[i])]
     end
     α₁=J[argmin(J[:,2]),1]
+#    print("α₁  $α₁ ")
 #    dbg=plot(J[:,1],J[:,2],title=    L"α $α₁")
 #    dbg=scatter!([α₁],[minimum(J[:,2])])
 #    display(dbg)
 #    @save "linesearch.jld2" α J
-    β₁,γ₁=update(u,v,α₁,β,γ,δ)
+    β₁,γ₁,γ₁=update(u,v,α₁,β,γ,δ)
 end
 function extrapolate(y,Δx=1.0)
     y⁰=y[end]
