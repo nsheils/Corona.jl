@@ -48,6 +48,36 @@ function merge_datasets(df::DataFrame,names::Array{String,1})
     return TimeArray(datarange(df),table,names)
 end
 
+function population(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
+    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+    Float64(Population[Population[!,:Column1].==String(Country),:][!,:Column2][1])
+end
+function confirmed(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
+    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+    Countries=String.(Population[:Column1])
+    Confirmed=TimeArray(Float64.(corona.merge_datasets(corona.read("Confirmed"),Countries))[Country])
+    TimeSeries.rename(Confirmed,Country => :Confirmed)
+end
+function deaths(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
+    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+    Countries=String.(Population[:Column1])
+    Deaths=TimeArray(Float64.(corona.merge_datasets(corona.read("Deaths"),Countries))[Country])
+    TimeSeries.rename(Deaths,Country => :Deaths)
+end
+function outbreak(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
+    A=CSV.read(rootdir*"raw/outbreak.csv")
+    A[A[!,:Country].==String(Country),:][2]
+end
+
+
+
+
+
+
+
+
+
+
 # %%
 function growth(u,Δ=10,Ω=0)
     t=0:Δ
