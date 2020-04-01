@@ -10,15 +10,19 @@ using DataFrames
 using june
 using LaTeXStrings
 ############################################################
+println("C O R O N A   ",String(:Germany))
+############################################################
 rootdir="/home/tms-archiv/Daten/2020-Corona/"
 cd(rootdir)
 Today=Dates.today()
+println(Today)
 ## Population size and Country names
 S₀=corona.population(:Germany)
 Confirmed=corona.confirmed(:Germany)
 Deaths=corona.deaths(:Germany)
 Data=merge(Confirmed,Deaths)
 OutbreakDate=corona.outbreak(:Germany)
+println("Data Read")
 
 
 
@@ -30,12 +34,11 @@ DataTime=FirstDate:Day(1):LastDate
 nData=length(DataTime)
 DataTimeSpan=(0.0,Float64(nData)-1)
 DataTimeRange=1:nData
-
+println("Outbreak: $OutbreakDate")
 ################################################################################
+println("Last Date: $LastDate ", Confirmed[LastDate],"  ",Deaths[LastDate])
 
 
-#Outbreak[Symbol("Germany")]=Date(2020,02,24)
-#@save "data/outbreak.jld2" Outbreak
 #
 nDays=400
 SimulLast=FirstDate+Day(nDays)
@@ -50,11 +53,6 @@ A=zeros(nGlobal,2);A[DataTimeRange,:]=values(Data)
 uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 
 ########################################
-
-Δt=DataTimeSpan[2]-DataTimeSpan[1]
-β₀=((log(LastConfirmed)-log(FirstConfirmed))/Δt)*ones(nSimul+1)
-γ₀=1/7*ones(nSimul+1)
-δ₀=0.001*1/7*ones(nSimul+1);
 
 β₀=1/4*ones(nSimul+1)
 γ₀=1/7*ones(nSimul+1)
@@ -71,12 +69,13 @@ AssimTimeRange=1:nAssim
 nDataWindow=length(OutbreakDate:Day(1):LastDate)
 W=[ones(nDataWindow); zeros(sponge)]
 #DataWindow=TimeArray(collect(AssimTime),W,["Data Window"])
+u₀=[S₀,values(Confirmed[OutbreakDate])[1],0.0,values(Deaths[OutbreakDate])[1]]
 u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
-α=1.0e-8/J₀
+α=1.0e-7/J₀
 println("α: $α")
 for i=1:1000000
     global u
