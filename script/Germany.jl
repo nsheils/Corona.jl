@@ -13,6 +13,7 @@ using LaTeXStrings
 println("C O R O N A   ",String(:Germany))
 ############################################################
 rootdir="/home/tms-archiv/Daten/2020-Corona/"
+startdir=pwd()
 cd(rootdir)
 Today=Dates.today()
 println(Today)
@@ -22,7 +23,7 @@ Confirmed=corona.confirmed(:Germany)
 Deaths=corona.deaths(:Germany)
 Data=merge(Confirmed,Deaths)
 OutbreakDate=corona.outbreak(:Germany)
-println("Data Read")
+println("Data read")
 
 
 
@@ -34,9 +35,9 @@ DataTime=FirstDate:Day(1):LastDate
 nData=length(DataTime)
 DataTimeSpan=(0.0,Float64(nData)-1)
 DataTimeRange=1:nData
-println("Outbreak: $OutbreakDate")
+println("Outbreak : $OutbreakDate")
 ################################################################################
-println("Last Date: $LastDate ", Confirmed[LastDate],"  ",Deaths[LastDate])
+println("Last Date: $LastDate ", Int(values(corona.confirmed(:Germany))[end]),"  ",Int(values(corona.deaths(:Germany))[end]))
 
 
 #
@@ -61,7 +62,7 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 β=β₀;γ=γ₀;δ=δ₀
 @load "data/Germany_model_parameters.jld"
 
-sponge=6
+sponge=1
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
 nAssim=length(AssimTime)
 AssimTimeSpan=(0.0,Float64(nAssim-1))
@@ -77,17 +78,17 @@ J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 α=1.0e-7/J₀
 println("α: $α")
-for i=1:10000
+for i=1:1000000
     global u
     a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,1000,W)
+    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,100,W)
     β[nAssim+1:end].=β[nAssim]
     γ[nAssim+1:end].=γ[nAssim]
     δ[nAssim+1:end].=δ[nAssim]
-    β[AssimTimeRange]=∂⁰(β[AssimTimeRange])
-    γ[AssimTimeRange]=∂⁰(γ[AssimTimeRange])
-    δ[AssimTimeRange]=∂⁰(δ[AssimTimeRange])
+    β[DataTimeRange]=∂⁰(β[DataTimeRange])
+    γ[DataTimeRange]=∂⁰(γ[DataTimeRange])
+    δ[DataTimeRange]=∂⁰(δ[DataTimeRange])
     @save "data/Germany_model_parameters.jld"  β γ δ
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 
@@ -100,17 +101,17 @@ for i=1:10000
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
-        global P=scatter(uₓ[AssimTime][:Confirmed],legend=:topleft,color=:orange,title="Germany")
-        P=scatter!(uₓ[AssimTime][:Deaths],label="Deaths",color=:black,lw=3,tickfontsize=12)
+        global P=scatter(uₓ[OutbreakDate:Day(1):LastDate][:Confirmed],legend=:topleft,color=:orange,title="Germany")
+        P=scatter!(uₓ[OutbreakDate:Day(1):LastDate][:Deaths],label="Deaths",color=:black,lw=3,tickfontsize=12)
         P=plot!(AssimTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
         P=plot!(AssimTime,u[:,2],label="I",color=:red,lw=3)
         P=plot!(AssimTime,u[:,3],label="R",color=:green,lw=3)
         P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
         display(P)
         savefig("figs/Germany.pdf")
-        global lP=scatter(uₓ[DataTime][:Confirmed],legend=:topleft,
+        global lP=scatter(uₓ[OutbreakDate:Day(1):LastDate][:Confirmed],legend=:topleft,
             color=:orange,title="Germany",yaxis=:log10)
-        lP=scatter!(uₓ[DataTime][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
+        lP=scatter!(uₓ[OutbreakDate:Day(1):LastDate][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
         lP=plot!(AssimTime,sum(u[AssimTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
         lP=plot!(AssimTime,u[AssimTimeRange,2],label="I",color=:red,lw=3)
         lP=plot!(AssimTime,u[AssimTimeRange,3] .+1.0,label="R",color=:green,lw=3)
@@ -147,3 +148,4 @@ u=corona.forward(β,γ,δ,u₀,SimulTimeSpan)
 Prognosis=TimeArray(SimulTime,u,["S","I","R","D"])
 @save "data/Germany_final.jld" Prognosis uₓ β γ δ u₀ SimulTime SimulTimeSpan SimulTimeRange
 writetimearray(Prognosis, "data/Germany_Prognosis.csv")
+cd(startdir)
