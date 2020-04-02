@@ -26,6 +26,7 @@ S₀=D.population
 Data=D.cases
 OutbreakDate=D.outbreak
 DataTime=D.TimeRange
+DataIndexRange=D.TimeIndexRange
 ##
 FirstDate=timestamp(D)[1]
 LastDate=timestamp(D)[end]
@@ -48,7 +49,7 @@ nSimul=length(SimulTime)
 SimulTimeSpan=(0.0,Float64(nSimul-1))
 SimulTimeRange=1:nSimul
 ##########################################
-A=zeros(nGlobal,2);A[D.TimeIndexRange,:]=values(D)
+A=zeros(nGlobal,2);A[DataIndexRange,:]=values(D)
 uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 ########################################
 
@@ -70,7 +71,7 @@ nDataWindow=length(OutbreakDate:Day(1):LastDate)
 W=[ones(nDataWindow); zeros(sponge)]
 #DataWindow=TimeArray(collect(AssimTime),W,["Data Window"])
 ##
-u₀=[S₀,values(Confirmed[OutbreakDate])[1],0.0,values(Deaths[OutbreakDate])[1]]
+u₀=[S₀,values(D.cases[:Confirmed][OutbreakDate])[1],0.0,values(D.cases[:Deaths][OutbreakDate])[1]]
 u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
@@ -82,7 +83,7 @@ a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
 ##
 #β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,1024,W)
 ##
-for i=1:10
+for i=1:10000
     global u
     a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
@@ -90,9 +91,9 @@ for i=1:10
     β[nAssim+1:end].=β[nAssim]
     γ[nAssim+1:end].=γ[nAssim]
     δ[nAssim+1:end].=δ[nAssim]
-    β[DataTimeRange]=∂⁰(β)[DataTimeRange]
-    γ[DataTimeRange]=∂⁰(γ)[DataTimeRange]
-    δ[DataTimeRange]=∂⁰(δ)[DataTimeRange]
+    β[DataIndexRange]=∂⁰(β)[DataIndexRange]
+    γ[DataIndexRange]=∂⁰(γ)[DataIndexRange]
+    δ[DataIndexRange]=∂⁰(δ)[DataIndexRange]
 #    @save "data/Germany_model_parameters.jld"  β γ δ
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 
@@ -125,11 +126,11 @@ for i=1:10
         savefig(lP,"figs/Germany_log.pdf")
         βₘ=maximum(β)
 #        pP=plot(DataWindow.*βₘ,lw=0,color=:whitesmoke,fill=(0,:whitesmoke),α=0.9,legend=:topleft)
-        pP=plot(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
+        pP=plot(DataTime,β[DataIndexRange],label=L"\beta",legend=:left,
                 lw=3,title="Germany",color=:red,tickfontsize=12)
         savefig(pP,"figs/Germany_beta.pdf")
-        pP=plot!(DataTime,γ[DataTimeRange],label=L"\gamma",lw=3,color=:green)
-        pP=plot!(DataTime,δ[DataTimeRange],label=L"\delta",lw=3,color=:black)
+        pP=plot!(DataTime,γ[DataIndexRange],label=L"\gamma",lw=3,color=:green)
+        pP=plot!(DataTime,δ[DataIndexRange],label=L"\delta",lw=3,color=:black)
         display(pP)
         savefig(pP,"figs/Germany_parameters3.pdf")
         debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[1]+12],label=L"\beta",legend=:left,
