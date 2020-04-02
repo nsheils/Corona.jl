@@ -73,19 +73,39 @@ struct data
     name::Symbol
     outbreak::Date
     population::Float64
-    DataTime::StepRange{Date,Day}
+    TimeRange::StepRange{Date,Day}
+    TimeIntervall::Tuple{Float64,Float64}
+    TimeIndexRange::UnitRange{Int64}
     cases::TimeArray
 end
 function data(S=:Italy::Symbol)
+
     C=corona.confirmed(S)
     D=corona.deaths(S)
     FirstDate=timestamp(C)[1]
     LastDate=timestamp(C)[end]
-    DataTime=FirstDate:Day(1):LastDate
-    data(S,corona.outbreak(S),
+    Range=FirstDate:Day(1):LastDate
+    nData=length(Range)
+    Intervall=(0.0,Float64(nData-1))
+    IndexRange=1:nData
+    
+    data(S,
+         corona.outbreak(S),
          corona.population(S),
-         DataTime,
+         Range,
+         Intervall,
+         IndexRange,
          merge(C,D))
+end
+import Base.+
+function +(D::data,x::Float64)
+    data(D.name,
+         D.outbreak,
+         D.population,
+         D.TimeRange,
+         D.TimeIntervall,
+         D.TimeRange,
+         merge(D.cases[:Confirmed] .+ x,D.cases[:Deaths] .+ x))
 end
 import Base.values
 import TimeSeries.timestamp
@@ -97,13 +117,7 @@ timestamp(D::data)=timestamp(D.cases)
     linewidth --> 3
     D.cases
 end
-import Base.+
-function +(D::data,x::Float64)
-    data(D.name,D.outbreak,
-         D.population,
-         D.DataTime,
-         merge(D.cases[:Confirmed] .+ x,D.cases[:Deaths] .+ x))
-end
+
 
     
 
