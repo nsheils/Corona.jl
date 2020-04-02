@@ -11,36 +11,34 @@ using june
 using LaTeXStrings
 ############################################################
 println("C O R O N A   ",String(:Germany))
-############################################################
-rootdir="/home/tms-archiv/Daten/2020-Corona/"
+#rootdir="/home/tms-archiv/Daten/2020-Corona/"
+rootdir="/home/jls/data/2020-Corona/"
 startdir=pwd()
 cd(rootdir)
 Today=Dates.today()
+
 println(Today)
 ## Population size and Country names
-S₀=corona.population(:Germany)
-Confirmed=corona.confirmed(:Germany)
-Deaths=corona.deaths(:Germany)
-Data=merge(Confirmed,Deaths)
-OutbreakDate=corona.outbreak(:Germany)
+
 println("Data read")
+D=corona.data(:Germany)
+S₀=D.population
+Data=D.cases
+OutbreakDate=D.outbreak
+DataTime=D.TimeRange
+##
+FirstDate=timestamp(D)[1]
+LastDate=timestamp(D)[end]
 
-
-
-
-#
-FirstDate=timestamp(Data)[1]
-LastDate=timestamp(Data)[end]
-DataTime=FirstDate:Day(1):LastDate
-nData=length(DataTime)
-DataTimeSpan=(0.0,Float64(nData)-1)
-DataTimeRange=1:nData
+nData=length(D)
+DataTimeSpan=D.TimeIntervall
+DataTimeRange=D.TimeRange
 println("Outbreak : $OutbreakDate")
-################################################################################
-println("Last Date: $LastDate ", Int(values(corona.confirmed(:Germany))[end]),"  ",Int(values(corona.deaths(:Germany))[end]))
+println("Last Date: $LastDate ",  Int(values(D.cases[:Confirmed])[end]),
+    "  ",Int(values(D.cases[:Deaths])[end]))
 
 
-#
+##
 nDays=400
 SimulLast=FirstDate+Day(nDays)
 GlobalTime=FirstDate:Day(1):SimulLast
@@ -50,17 +48,18 @@ nSimul=length(SimulTime)
 SimulTimeSpan=(0.0,Float64(nSimul-1))
 SimulTimeRange=1:nSimul
 ##########################################
-A=zeros(nGlobal,2);A[DataTimeRange,:]=values(Data)
+A=zeros(nGlobal,2);A[D.TimeIndexRange,:]=values(D)
 uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
-
 ########################################
+
+
 
 β₀=1/4*ones(nSimul+1)
 γ₀=1/10*ones(nSimul+1)
 δ₀=zeros(nSimul+1);
 
 β=β₀;γ=γ₀;δ=δ₀
-@load "data/Germany_model_parameters.jld"
+#@load "data/Germany_model_parameters.jld"
 
 sponge=1
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
@@ -70,26 +69,31 @@ AssimTimeRange=1:nAssim
 nDataWindow=length(OutbreakDate:Day(1):LastDate)
 W=[ones(nDataWindow); zeros(sponge)]
 #DataWindow=TimeArray(collect(AssimTime),W,["Data Window"])
+##
 u₀=[S₀,values(Confirmed[OutbreakDate])[1],0.0,values(Deaths[OutbreakDate])[1]]
 u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
-α=1.0e-7/J₀
+α=1.0e-1/J₀
 println("α: $α")
-for i=1:1000000
+a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
+##
+#β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,1024,W)
+##
+for i=1:10
     global u
     a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,100,W)
+    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,2^13,W)
     β[nAssim+1:end].=β[nAssim]
     γ[nAssim+1:end].=γ[nAssim]
     δ[nAssim+1:end].=δ[nAssim]
-    β[DataTimeRange]=∂⁰(β[DataTimeRange])
-    γ[DataTimeRange]=∂⁰(γ[DataTimeRange])
-    δ[DataTimeRange]=∂⁰(δ[DataTimeRange])
-    @save "data/Germany_model_parameters.jld"  β γ δ
+    β[DataTimeRange]=∂⁰(β)[DataTimeRange]
+    γ[DataTimeRange]=∂⁰(γ)[DataTimeRange]
+    δ[DataTimeRange]=∂⁰(δ)[DataTimeRange]
+#    @save "data/Germany_model_parameters.jld"  β γ δ
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 
     if mod(i,100) == 0
@@ -97,7 +101,7 @@ for i=1:1000000
         println(i," ",J[end])
     end
     if mod(i,100) == 0
-        @save "data/Germany_model_parameters.jld"  β γ δ J
+#        @save "data/Germany_model_parameters.jld"  β γ δ J
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
@@ -106,6 +110,7 @@ for i=1:1000000
         P=plot!(AssimTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
         P=plot!(AssimTime,u[:,2],label="I",color=:red,lw=3)
         P=plot!(AssimTime,u[:,3],label="R",color=:green,lw=3)
+
         P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
         display(P)
         savefig("figs/Germany.pdf")
@@ -133,6 +138,10 @@ for i=1:1000000
 
    end
 end
+##
+
+
+
 β[nAssim+1:end].=β[nAssim]
 γ[nAssim+1:end].=γ[nAssim]
 δ[nAssim+1:end].=δ[nAssim]
