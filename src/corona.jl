@@ -10,7 +10,7 @@ using LinearAlgebra
 using JLD2
 using Plots
 using LaTeXStrings
-function read(dataset::String,data="/home/jls/data/COVID-19/csse_covid_19_data/csse_covid_19_time_series/")
+function read(dataset::String,data="raw/JHU/COVID-19/csse_covid_19_data/csse_covid_19_time_series/")
     if dataset=="Confirmed"
         #        Confirmed=CSV.read(data*"time_series_19-covid-Confirmed.csv");
         Confirmed=CSV.read(data*"time_series_covid19_confirmed_global.csv");
@@ -48,34 +48,64 @@ function merge_datasets(df::DataFrame,names::Array{String,1})
     return TimeArray(datarange(df),table,names)
 end
 
-function population(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
-    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+function population(Country=:Italy::Symbol,rootdir="raw/")
+    Population=CSV.read(rootdir*"population.csv",header=false);
     Float64(Population[Population[!,:Column1].==String(Country),:][!,:Column2][1])
 end
-function confirmed(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
-    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+function confirmed(Country=:Italy::Symbol,rootdir="raw/")
+    Population=CSV.read(rootdir*"population.csv",header=false);
     Countries=String.(Population[:Column1])
     Confirmed=TimeArray(Float64.(corona.merge_datasets(corona.read("Confirmed"),Countries))[Country])
     TimeSeries.rename(Confirmed,Country => :Confirmed)
 end
-function deaths(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
-    Population=CSV.read(rootdir*"raw/population.csv",header=false);
+function deaths(Country=:Italy::Symbol,rootdir="raw/")
+    Population=CSV.read(rootdir*"population.csv",header=false);
     Countries=String.(Population[:Column1])
     Deaths=TimeArray(Float64.(corona.merge_datasets(corona.read("Deaths"),Countries))[Country])
     TimeSeries.rename(Deaths,Country => :Deaths)
 end
-function outbreak(Country=:Italy::Symbol,rootdir="/home/tms-archiv/Daten/2020-Corona/")
+function outbreak(Country=:Italy::Symbol,rootdir="raw/")
     D=confirmed(Country,rootdir)
     timestamp(D[D.>0])[1]
 end
 
+struct data
+    name::Symbol
+    outbreak::Date
+    population::Float64
+    DataTime::StepRange{Date,Day}
+    cases::TimeArray
+end
+function data(S=:Italy::Symbol)
+    C=corona.confirmed(S)
+    D=corona.deaths(S)
+    FirstDate=timestamp(C)[1]
+    LastDate=timestamp(C)[end]
+    DataTime=FirstDate:Day(1):LastDate
+    data(S,corona.outbreak(S),
+         corona.population(S),
+         DataTime,
+         merge(C,D))
+end
+import Base.values
+import TimeSeries.timestamp
+values(D::data)=values(D.cases)
+export timestamp
+timestamp(D::data)=timestamp(D.cases)
+@recipe function f(D::corona.data)
+    linecolor --> [:orange :black]
+    linewidth --> 3
+    D.cases
+end
+import Base.+
+function +(D::data,x::Float64)
+    data(D.name,D.outbreak,
+         D.population,
+         D.DataTime,
+         merge(D.cases[:Confirmed] .+ x,D.cases[:Deaths] .+ x))
+end
 
-
-
-
-
-
-
+    
 
 
 # %%
@@ -154,7 +184,7 @@ function dfdu(p::Array{Float64,2},t::Float64)
     A[2,2]= β*S*(N+I)/N^2 - (γ+δ)
     A[2,3]=-β*I*S/N^2
     A[2,4]=-β*I*S/N^2
-    
+
     A[3,2]=γ
     A[4,2]=δ
     return A
@@ -172,15 +202,15 @@ function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
     else
         S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
-
+    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:]
     A=dfdu(p,t)
     # Observations
     OBS=[0 0;1 0;1 0;1 1]
     # weights
     g=((OBS'*[S,I,R,D] - [Cₓ,Dₓ])' * OBS')'
 
-    dv= -A'*v -g.*window 
-    
+    dv= -A'*v -g.*window
+
     return dv
 end
 
@@ -206,7 +236,7 @@ function dfda(u::Array{Float64,2})
     f[:,4,1].=0.0
     f[:,4,2].=0.0
     f[:,4,3]= I
-    
+
     return f
 end
 
@@ -260,22 +290,52 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
         C=I+R+D
         norm([C .* window;D .* window]-[Cₓ .* window;Dₓ .* window])
     end
-    J=zeros(itMax+1,2)
-#    for i=0:itMax
-#        Δ=Float64(i)*α
-#        global J[i+1,:]=[Δ probe(Δ)]
-#    end
-    Δ=α*sort(rand(itMax+1))
-    for  i=1:itMax+1
-        global J[i,:]=[Δ[i] probe(Δ[i])]
+    function probe(αₐ,αₑ,nΔ=10)
+        Δα=(αₑ-αₐ)
+        if (αₐ==αₑ) & (nΔ == 1)
+            αₘ=(αₐ+αₑ)/2
+            return αₘ, probe(αₘ)
+        else
+            Δ=αₐ .+ Δα*sort(rand(nΔ+1))
+            J=zeros(nΔ+1,2)
+            for  i=1:nΔ+1
+                J[i,:]=[Δ[i] probe(Δ[i])]
+            end
+            αₘ=J[argmin(J[:,2]),1]
+            Jₘ=minimum(J[:,2])
+            return αₘ,Jₘ
+        end
     end
-    α₁=J[argmin(J[:,2]),1]
-#    print("α₁  $α₁ ")
-#    dbg=plot(J[:,1],J[:,2],title=    L"α $α₁")
-#    dbg=scatter!([α₁],[minimum(J[:,2])])
-#    display(dbg)
-#    @save "linesearch.jld2" α J
-    β₁,γ₁,γ₁=update(u,v,α₁,β,γ,δ)
+    ## Bisection
+    i=1
+    αₐ= 0.0
+    αₑ= α
+    ϵ = α/10.0
+    J₀=probe(0.0)
+    Jₐ=probe(αₐ)
+    Jₑ=probe(αₑ)
+    while i < itMax
+        αₘ=(αₐ+αₑ)/2
+#        αₘ=αₐ+ rand()*(αₑ-αₐ)
+#        print(αₘ," => ")
+        αₘ,Jₘ=probe(αₘ-ϵ/50,αₘ+ϵ/50)
+#        println(αₘ)
+#        readline()
+        if (Jₘ<J₀) & ((αₐ-αₑ)/2<ϵ)
+#            println("found $αₘ, $Jₘ")
+            return β₁,γ₁,γ₁=update(u,v,αₘ,β,γ,δ)
+        end
+        if Jₘ < Jₐ
+            αₐ=αₘ
+            Jₐ=Jₘ
+        else
+            αₑ=αₘ
+            Jₑ=Jₘ
+        end
+        i=i+1
+    end
+    println("$i failed")
+    β,γ,δ
 end
 function extrapolate(y,Δx=1.0)
     y⁰=y[end]
@@ -283,7 +343,7 @@ function extrapolate(y,Δx=1.0)
     y²= [-1, 4,-5,2]'*y[end-3:end]
     y⁰ + y¹*Δx + + y²*Δx^2/2
 end
-export smooth
+
 function smooth(y,Δx=1.0)
     f⁰=(circshift(y,-1) +   2*y +circshift(y,1))/4
     f⁰[1]=y[1]
