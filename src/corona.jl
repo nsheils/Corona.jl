@@ -124,36 +124,18 @@ end
     
 
 
-# %%
-function growth(u,Δ=10,Ω=0)
-    t=0:Δ
-    P=[ones(length(t)) t]
-    if ndims(u) == 1
-        c=P\log10.(u[end - Ω .- t])
-        -c[2]
-    elseif ndims(u) == 2
-        c=P\log10.(u[end - Ω .- t,:])
-        -c[2,:]
-    end
+
+function growth(u,β,γ,δ)
+    S=u[:,1]
+    I=u[:,2]
+    R=u[:,3]
+    D=u[:,4]
+
+    N=S+R+I+D
+    λ=β .*S ./N  - (γ+δ)
 end
-# %%
-function trend(C,Δ=10,N=30)
-    nt,nc=size(C)
-    ΔD=timestamp(C[end-N])[1]:Day(1):timestamp(C[end])[1]
-    Countries=String.(colnames(C))
-    if ndims(C) == 1
-        g=zeros(N+1)
-        for    Ω=0:N
-            g[end-Ω] = growth(values(C),Δ,Ω)
-        end
-    elseif ndims(C) == 2
-        g=zeros(N+1,nc)
-        for    Ω=0:N
-            g[end-Ω,:] = growth(values(C),Δ,Ω)'
-        end
-    end
-    return  TimeArray(ΔD,g,Countries)
-end
+
+
 
 
 
@@ -169,6 +151,8 @@ function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Fl
     else
         β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
+    β,γ,δ=p[it,:] 
+##
     S,I,R,D=u[1:4]
     N=S+I+R+D
     du[1]=-β*I*S/N
@@ -189,6 +173,7 @@ function dfdu(p::Array{Float64,2},t::Float64)
     else
         S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     end
+    S,I,R,D,β,γ,δ=p[it,:]
     N=S+I+R+D
     A=zeros(4,4)
     A[1,1]=-β*I*(N+S)/N^2
@@ -259,7 +244,7 @@ end
 
 function forward(β,γ,δ,u₀,tspan)
     p=[β γ δ]
-    problem=ODEProblem(sir!,u₀,tspan,p)
+    problem=ODEProblem(sir!,u₀,tspan,p,maxiters=5e5)
     solution=solve(problem)
     u=collect(solution(0:tspan[2])')
 end
@@ -267,7 +252,7 @@ function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0),window=ones(size(u)[1]))
     nt,ne=size(u)
     p=[u β[1:nt] γ[1:nt] δ[1:nt] uₓ window]
     v₀=[0.0 ,0.0, 0.0, 0.0]
-    adj=ODEProblem(corona.sir_adj,v₀,tspan,p)
+    adj=ODEProblem(corona.sir_adj,v₀,tspan,p,maxiters=5e5)
     adj_sol=solve(adj)
     v=collect(adj_sol(0:tspan[1])')
 end
@@ -293,7 +278,7 @@ function update(u,v,α,β,γ,δ)
 end
 
 function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
-                    α=1.0e-12,itMax=1024,window=ones(size(u)[1]))
+                    α=1.0e-12,itMax=2048,window=ones(size(u)[1]))
     u=corona.forward(β,γ,δ,u₀,tspan)
     function probe(α)
         β₁,γ₁,δ₁=update(u,v,α,β,γ,δ)

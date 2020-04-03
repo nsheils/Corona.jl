@@ -63,7 +63,12 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 γ₀=1/7*ones(nSimul+1)
 δ₀=zeros(nSimul+1);
 
-ColdStart=true
+
+β₀=0.0*ones(nSimul+1)
+γ₀=0.0*ones(nSimul+1)
+δ₀=zeros(nSimul+1);
+
+ColdStart=false
 if ColdStart == true
     printstyled("Cold Start";color=:red)
     β=β₀;γ=γ₀;δ=δ₀
@@ -71,7 +76,7 @@ else
     printstyled("Warm Start";color=:green)
     @load "data/Bavaria/model_parameters.jld"
 end
-sponge=1
+sponge=14
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
 nAssim=length(AssimTime)
 AssimTimeSpan=(0.0,Float64(nAssim-1))
@@ -84,31 +89,45 @@ Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
-α=1.0e-7/J₀
-Iterations=10000
+α=1.0/J₀
+Iterations=100000
 println(" with α= $α  and $Iterations Iterations ")
 for i=1:Iterations
     global u
-    a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
+    v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,2^10,W)
-    β[nAssim+1:end].=β[nAssim]
-    γ[nAssim+1:end].=γ[nAssim]
-    δ[nAssim+1:end].=δ[nAssim]
-    β[AssimTimeRange]=∂⁰(β[AssimTimeRange])
-    γ[AssimTimeRange]=∂⁰(γ[AssimTimeRange])
-    δ[AssimTimeRange]=∂⁰(δ[AssimTimeRange])
-    @save "data/Bavaria/model_parameters.jld"  β γ δ
+    β,γ,δ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
+                            u₀,AssimTimeSpan,α,2^12,W)
+#    β[nAssim+1:end].=β[nAssim]
+#    γ[nAssim+1:end].=γ[nAssim]
+#    δ[nAssim+1:end].=δ[nAssim]
+#    β[AssimTimeRange]=∂⁰(β[AssimTimeRange])
+#    γ[AssimTimeRange]=∂⁰(γ[AssimTimeRange])
+#    δ[AssimTimeRange]=∂⁰(δ[AssimTimeRange])
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
-
     if mod(i,100) == 0
+        β=∂⁰(β)
+        γ=∂⁰(γ)
+        δ=∂⁰(δ)    
+    end
+    if mod(i,100) == 0
+        @save "data/Bavaria/model_parameters.jld"  β γ δ
         global J=[J; norm([Cₓ.*W;Dₓ.*W]-[sum(u[:,2:4],dims=2).*W;u[:,4].*W])/J₀]
-        if J[end]>=J[end-1] color=:red else color=:green end
+        if J[end]==minimum(J)
+            color=:green 
+        elseif J[end]>=J[end-1]
+            color=:red
+        else
+            color=:orange
+        end
         print(i," ")
         printstyled(J[end],"\n";color=color)
     end
-    if mod(i,1000) == 0
-        @save "data/Bavaria/model_parameters.jld"  β γ δ J
+    if mod(i,100) == 0
+        U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
+        V=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
+        P=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
+        @save "data/Bavaria/soloution.jld" AssimTime U V P
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
@@ -138,7 +157,7 @@ for i=1:Iterations
         pP=plot!(DataTime,δ[DataTimeRange],label=L"\delta",lw=3,color=:black)
         display(pP)
         savefig(pP,"figs/Bavaria/parameters3.pdf")
-        debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[1]+12],label=L"\beta",legend=:left,
+        debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[end]+30],label=L"\beta",legend=:left,
                      lw=3,title="Bavaria",color=:red,tickfontsize=12)
         savefig(debuggP,"figs/Bavaria/dbug.pdf")
 
