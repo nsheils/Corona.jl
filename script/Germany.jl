@@ -60,7 +60,7 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 δ₀=zeros(nSimul+1);
 
 β=β₀;γ=γ₀;δ=δ₀
-#@load "data/Germany_model_parameters.jld"
+@load "data/Germany/model_parameters.jld"
 
 sponge=1
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
@@ -87,14 +87,14 @@ for i=1:10000
     global u
     a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,2^13,W)
+    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,2^9,W)
     β[nAssim+1:end].=β[nAssim]
     γ[nAssim+1:end].=γ[nAssim]
     δ[nAssim+1:end].=δ[nAssim]
     β[DataIndexRange]=∂⁰(β)[DataIndexRange]
     γ[DataIndexRange]=∂⁰(γ)[DataIndexRange]
     δ[DataIndexRange]=∂⁰(δ)[DataIndexRange]
-#    @save "data/Germany_model_parameters.jld"  β γ δ
+    @save "data/Germany/model_parameters.jld"  β γ δ
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 
     if mod(i,100) == 0
@@ -102,7 +102,7 @@ for i=1:10000
         println(i," ",J[end])
     end
     if mod(i,100) == 0
-#        @save "data/Germany_model_parameters.jld"  β γ δ J
+        @save "data/Germany/model_parameters.jld"  β γ δ J
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
@@ -114,28 +114,28 @@ for i=1:10000
 
         P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
         display(P)
-        savefig("figs/Germany.pdf")
+        savefig("figs/Germany/Devlopment.pdf")
         global lP=scatter(uₓ[OutbreakDate:Day(1):LastDate][:Confirmed],legend=:topleft,
             color=:orange,title="Germany",yaxis=:log10)
         lP=scatter!(uₓ[OutbreakDate:Day(1):LastDate][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
         lP=plot!(AssimTime,sum(u[AssimTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
         lP=plot!(AssimTime,u[AssimTimeRange,2],label="I",color=:red,lw=3)
         lP=plot!(AssimTime,u[AssimTimeRange,3] .+1.0,label="R",color=:green,lw=3)
-#        savefig(lP,"figs/Germany_CIR_log.pdf")
+#        savefig(lP,"figs/Germany/CIR_log.pdf")
         lP=plot!(AssimTime,u[AssimTimeRange,4] .+1.0,label="D",color=:black,lw=3,tickfontsize=12)
-        savefig(lP,"figs/Germany_log.pdf")
+        savefig(lP,"figs/Germany/Devlopment_log.pdf")
         βₘ=maximum(β)
 #        pP=plot(DataWindow.*βₘ,lw=0,color=:whitesmoke,fill=(0,:whitesmoke),α=0.9,legend=:topleft)
         pP=plot(DataTime,β[DataIndexRange],label=L"\beta",legend=:left,
                 lw=3,title="Germany",color=:red,tickfontsize=12)
-        savefig(pP,"figs/Germany_beta.pdf")
+        savefig(pP,"figs/Germany/beta.pdf")
         pP=plot!(DataTime,γ[DataIndexRange],label=L"\gamma",lw=3,color=:green)
         pP=plot!(DataTime,δ[DataIndexRange],label=L"\delta",lw=3,color=:black)
         display(pP)
-        savefig(pP,"figs/Germany_parameters3.pdf")
+        savefig(pP,"figs/Germany/parameters3.pdf")
         debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[1]+12],label=L"\beta",legend=:left,
                      lw=3,title="Germany",color=:red,tickfontsize=12)
-        savefig(debuggP,"figs/Germany_dbug.pdf")
+        savefig(debuggP,"figs/Germany/dbug.pdf")
 
    end
 end
@@ -150,12 +150,12 @@ end
 β[nAssim+1:end].=corona.extrapolate(β[nAssim-3:nAssim])
 γ[nAssim+1:end].=corona.extrapolate(γ[nAssim-3:nAssim])
 δ[nAssim+1:end].=corona.extrapolate(δ[nAssim-3:nAssim])
-@save "data/Germany_model_parameters.jld"  β γ δ
+@save "data/Germany/model_parameters.jld"  β γ δ
 Parameter=TimeArray(SimulTime,[β[SimulTimeRange] γ[SimulTimeRange] δ[SimulTimeRange]],["β", "γ", "δ"])
-writetimearray(Parameter, "data/Germany_Parameter.csv")#Save data
+writetimearray(Parameter, "data/Germany/Parameter.csv")#Save data
 ################### Prognosis ################
 u=corona.forward(β,γ,δ,u₀,SimulTimeSpan)
 Prognosis=TimeArray(SimulTime,u,["S","I","R","D"])
-@save "data/Germany_final.jld" Prognosis uₓ β γ δ u₀ SimulTime SimulTimeSpan SimulTimeRange
-writetimearray(Prognosis, "data/Germany_Prognosis.csv")
+@save "data/Germany/final.jld" Prognosis uₓ β γ δ u₀ SimulTime SimulTimeSpan SimulTimeRange
+writetimearray(Prognosis, "data/Germany/Prognosis.csv")
 cd(startdir)

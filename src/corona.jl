@@ -104,9 +104,11 @@ function +(D::data,x::Float64)
          D.population,
          D.TimeRange,
          D.TimeIntervall,
-         D.TimeRange,
+         D.TimeIndexRange,
          merge(D.cases[:Confirmed] .+ x,D.cases[:Deaths] .+ x))
 end
+import Base.length
+length(D::data)=length(D.cases)
 import Base.values
 import TimeSeries.timestamp
 values(D::data)=values(D.cases)
@@ -324,19 +326,16 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
     i=1
     αₐ= 0.0
     αₑ= α
-    ϵ = α/10.0
+    ϵ = 1/3
     J₀=probe(0.0)
-    Jₐ=probe(αₐ)
-    Jₑ=probe(αₑ)
+    Jₐ=J₀
     while i < itMax
-        αₘ=(αₐ+αₑ)/2
-#        αₘ=αₐ+ rand()*(αₑ-αₐ)
-#        print(αₘ," => ")
-        αₘ,Jₘ=probe(αₘ-ϵ/50,αₘ+ϵ/50)
-#        println(αₘ)
-#        readline()
-        if (Jₘ<J₀) & ((αₐ-αₑ)/2<ϵ)
-#            println("found $αₘ, $Jₘ")
+        #        αₘ=(αₐ+αₑ)/2
+        Δα=(αₑ-αₐ)
+        αₘ=αₐ+ rand()*Δα
+#        αₘ,Jₘ=probe(αₘ-Δα/50,αₘ+Δα/50)
+        Jₘ=probe(αₘ)
+        if (Jₘ<J₀) & (Δα/α<ϵ)
             return β₁,γ₁,γ₁=update(u,v,αₘ,β,γ,δ)
         end
         if Jₘ < Jₐ
@@ -348,7 +347,7 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
         end
         i=i+1
     end
-    println("$i failed")
+#    println("$i failed")
     β,γ,δ
 end
 function extrapolate(y,Δx=1.0)
