@@ -10,7 +10,7 @@ using DataFrames
 using june
 using LaTeXStrings
 ############################################################
-rootdir="/home/tms-archiv/Daten/2020-Corona/"
+rootdir="/home/jls/data/2020-Corona/"
 cd(rootdir)
 Today=Dates.today()
 ## Population size and Country names
@@ -38,10 +38,7 @@ DataTimeSpan=(0.0,Float64(nData)-1)
 DataTimeRange=1:nData
 
 ################################################################################
-@load "data/outbreak.jld2" Outbreak
-OutbreakDate=Outbreak[Symbol("Bavaria")]
-#Outbreak[Symbol("Bavaria")]=Date(2020,02,24)
-#@save "data/outbreak.jld2" Outbreak
+OutbreakDate=Date(2020,2,24)
 #
 nDays=400
 SimulLast=FirstDate+Day(nDays)
@@ -66,9 +63,14 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 γ₀=1/7*ones(nSimul+1)
 δ₀=zeros(nSimul+1);
 
-β=β₀;γ=γ₀;δ=δ₀
-#@load "data/Bavaria/model_parameters.jld"
-
+ColdStart=true
+if ColdStart == true
+    printstyled("Cold Start";color=:red)
+    β=β₀;γ=γ₀;δ=δ₀
+else
+    printstyled("Warm Start";color=:green)
+    @load "data/Bavaria/model_parameters.jld"
+end
 sponge=1
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
 nAssim=length(AssimTime)
@@ -83,8 +85,8 @@ Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 α=1.0e-7/J₀
-Iterations=1000
-println("Start with α= $α  and $Iterations Iterations ")
+Iterations=10000
+println(" with α= $α  and $Iterations Iterations ")
 for i=1:Iterations
     global u
     a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
@@ -101,7 +103,9 @@ for i=1:Iterations
 
     if mod(i,100) == 0
         global J=[J; norm([Cₓ.*W;Dₓ.*W]-[sum(u[:,2:4],dims=2).*W;u[:,4].*W])/J₀]
-        println(i," ",J[end])
+        if J[end]>=J[end-1] color=:red else color=:green end
+        print(i," ")
+        printstyled(J[end],"\n";color=color)
     end
     if mod(i,1000) == 0
         @save "data/Bavaria/model_parameters.jld"  β γ δ J
@@ -140,18 +144,3 @@ for i=1:Iterations
 
    end
 end
-β[nAssim+1:end].=β[nAssim]
-γ[nAssim+1:end].=γ[nAssim]
-δ[nAssim+1:end].=δ[nAssim]
-
-β[nAssim+1:end].=corona.extrapolate(β[nAssim-3:nAssim])
-γ[nAssim+1:end].=corona.extrapolate(γ[nAssim-3:nAssim])
-δ[nAssim+1:end].=corona.extrapolate(δ[nAssim-3:nAssim])
-@save "data/Bavaria/model_parameters.jld"  β γ δ
-Parameter=TimeArray(SimulTime,[β[SimulTimeRange] γ[SimulTimeRange] δ[SimulTimeRange]],["β", "γ", "δ"])
-writetimearray(Parameter, "data/Bavaria/Parameter.csv")#Save data
-################### Prognosis ################
-u=corona.forward(β,γ,δ,u₀,SimulTimeSpan)
-Prognosis=TimeArray(SimulTime,u,["S","I","R","D"])
-@save "data/Bavaria/final.jld" Prognosis uₓ β γ δ u₀ SimulTime SimulTimeSpan SimulTimeRange
-writetimearray(Prognosis, "data/Bavaria/Prognosis.csv")
