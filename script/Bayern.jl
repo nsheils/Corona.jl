@@ -1,4 +1,4 @@
-using corona
+vusing corona
 using Plots
 using JLD2
 using DifferentialEquations
@@ -12,17 +12,19 @@ using LaTeXStrings
 ############################################################
 rootdir      = "/home/jls/data/2020-Corona/"
 Iterations   = 1000000
-FilterFreq   = 1000
+FilterFreq   = 10000000
 ScreenFreq   = 100
 PlotFreq     = 100
 sponge       = 1
-LineIterMax  = 2^10
+LineIterMax  = 2^12
 LineRangeMax = 1e-6
 ColdStart    = false
 ############################################################
+Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
+push!(Actions,[Date(2020,03,20),"Vorläufige Ausgangsbeschränkung"])
 parameter=DataFrame(
-parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
-value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
+    parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
+    value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
 println(parameter)
 cd(rootdir)
 Today=Dates.today()
@@ -142,6 +144,10 @@ for i=1:Iterations
 
         pP=scatter(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
                 lw=3,title="Bavaria",color=:red,tickfontsize=12)
+        for action in eachrow(Actions)
+            d=action[1]
+            plot!([d,d],[minimum(β[DataTimeRange]),maximum(β[DataTimeRange])] ,label=action[2],lw=3)
+        end
         savefig(pP,"figs/Bavaria/beta.pdf")
         pP=plot!(DataTime,γ[DataTimeRange],label=L"\gamma",lw=3,color=:green)
         pP=plot!(DataTime,δ[DataTimeRange],label=L"\delta",lw=3,color=:black)
