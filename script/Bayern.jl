@@ -15,17 +15,18 @@ rootdir="/home/jls/data/2020-Corona/"
 Iterations=1000000
 FilterFreq=100
 ScreenFreq=100
-PlotFreq=10000
+PlotFreq=100
 sponge=2
+LineIterMax=2^14
 ############################################################
-ColdStart=true
+ColdStart=false
 β₀=1/4*ones(nSimul+1)
 γ₀=1/7*ones(nSimul+1)
 δ₀=zeros(nSimul+1);
 ############################################################
 parameter=DataFrame(
-parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge"],
-value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge])
+parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax"],
+value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax])
 println(parameter)
 
 
@@ -102,7 +103,7 @@ for i=1:Iterations
     v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
     β,γ,δ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
-                            u₀,AssimTimeSpan,α,2^12,W)
+                            u₀,AssimTimeSpan,α,LineIterMax,W)
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
     if mod(i,FilterFreq) == 0
         β=∂⁰(β)
@@ -114,7 +115,7 @@ for i=1:Iterations
         U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
         V=TimeArray(collect(AssimTime),v,["S", "I" ,"R" ,"D"])
         P=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
-        @save "data/Bavaria/solution.jld" AssimTime U V P
+        @save "data/Bavaria/solution.jld" AssimTime U V P Data
         @save "data/Bavaria/model_parameters.jld"  β γ δ
     end
     if mod(i,ScreenFreq) == 0
