@@ -10,28 +10,20 @@ using DataFrames
 using june
 using LaTeXStrings
 ############################################################
-rootdir="/home/jls/data/2020-Corona/"
-
-Iterations=1000000
-FilterFreq=100
-ScreenFreq=100
-PlotFreq=100
-sponge=2
-LineIterMax=2^14
-LineRangeMax=1e-3
-############################################################
-ColdStart=false
-β₀=1/4*ones(nSimul+1)
-γ₀=1/7*ones(nSimul+1)
-δ₀=zeros(nSimul+1);
+rootdir      = "/home/jls/data/2020-Corona/"
+Iterations   = 1000000
+FilterFreq   = 1000
+ScreenFreq   = 100
+PlotFreq     = 100
+sponge       = 1
+LineIterMax  = 2^10
+LineRangeMax = 1e-6
+ColdStart    = false
 ############################################################
 parameter=DataFrame(
 parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
 value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
 println(parameter)
-
-
-
 cd(rootdir)
 Today=Dates.today()
 ## Population size and Country names
@@ -75,6 +67,9 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 
 ########################################
 if ColdStart == true
+    β₀=1/4*ones(nSimul+1)
+    γ₀=1/7*ones(nSimul+1)
+    δ₀=zeros(nSimul+1);
     printstyled("Cold Start";color=:red)
     β=β₀;γ=γ₀;δ=δ₀
 else
@@ -96,61 +91,55 @@ J₀=norm([Cₓ.*W;Dₓ.*W])
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 println(" with α= $α  and $Iterations Iterations ")
 for i=1:Iterations
-    global u
-    v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
+    global u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
+    global v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
-                            u₀,AssimTimeSpan,α,LineIterMax,W)
+    β,γ,δ,success,Jₑ,αₑ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
+                                          u₀,AssimTimeSpan,α,LineIterMax,W,
+                                          "linesearch")
+    if success
+        @save "data/Bavaria/model_parameters.jld"  β γ δ
+        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
+    else
+        β,γ,δ,success,Jₑ,αₑ=corona.linesearch(
+            β,γ,δ,v,values(uₓ[AssimTime]),
+            u₀,AssimTimeSpan,α,LineIterMax,W,
+            "brute_force")
+    end
+
+
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
+    if mod(i,ScreenFreq) == 0
+        global J=[J; Jₑ/J₀]
+        if J[end]==minimum(J)
+            color=:green 
+        elseif J[end]>minimum(J)
+            color=:red
+        else
+            color=:blue
+        end
+        print(i," ")
+        printstyled(J[end],"\n";color=color)
+    end
     if mod(i,FilterFreq) == 0
+        println("Filtering")
         β=∂⁰(β)
         γ=∂⁰(γ)
         δ=∂⁰(δ)
         β[nAssim-sponge+1:end].=β[nAssim-sponge]
         γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
         δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
-        U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
-        V=TimeArray(collect(AssimTime),v,["S", "I" ,"R" ,"D"])
-        P=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
-        @save "data/Bavaria/solution.jld" AssimTime U V P Data
+        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
         @save "data/Bavaria/model_parameters.jld"  β γ δ
     end
-    if mod(i,ScreenFreq) == 0
-        global J=[J; norm([Cₓ.*W;Dₓ.*W]-[sum(u[:,2:4],dims=2).*W;u[:,4].*W])/J₀]
-        if J[end]==minimum(J)
-            color=:green 
-        elseif J[end]>=J[end-1]
-            color=:red
-        else
-            color=:orange
-        end
-        print(i," ")
-        printstyled(J[end],"\n";color=color)
-    end
+    
     if mod(i,PlotFreq) == 0
-        I=u[:,2]
-        R=u[:,3]
-        D=u[:,4]
-        global P=scatter(uₓ[AssimTime][:Confirmed],legend=:topleft,color=:orange,title="Bavaria")
-        P=scatter!(uₓ[AssimTime][:Deaths],label="Deaths",color=:black,lw=3,tickfontsize=12)
-        P=plot!(AssimTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
-        P=plot!(AssimTime,u[:,2],label="I",color=:red,lw=3)
-        P=plot!(AssimTime,u[:,3],label="R",color=:green,lw=3)
-        P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
-        display(P)
-        savefig("figs/Bavaria/Development.pdf")
-        global lP=scatter(uₓ[DataTime][:Confirmed].+1,legend=:topleft,
-            color=:orange,title="Bavaria",yaxis=:log10)
-        lP=scatter!(uₓ[DataTime][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
-        lP=plot!(DataTime,sum(u[DataTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
-        lP=plot!(DataTime,u[DataTimeRange,2] .+1,label="I",color=:red,lw=3)
-        lP=plot!(DataTime,u[DataTimeRange,3] .+1.0,label="R",color=:green,lw=3)
-#        savefig(lP,"figs/Bavaria/CIR_log.pdf")
-        lP=plot!(DataTime,u[DataTimeRange,4] .+1.0,label="D",color=:black,lw=3,tickfontsize=12)
+        P=corona.plot_solution(U,Data,"Bavaria")
+        savefig(P,"figs/Bavaria/Development.pdf")
+        P=plot_solution(U,Data,"Bavaria",:log10)
         savefig(lP,"figs/Bavaria/Developmentlog.pdf")
-        βₘ=maximum(β)
-#        pP=plot(DataWindow.*βₘ,lw=0,color=:whitesmoke,fill=(0,:whitesmoke),α=0.9,legend=:topleft)
-        pP=plot(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
+
+        pP=scatter(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
                 lw=3,title="Bavaria",color=:red,tickfontsize=12)
         savefig(pP,"figs/Bavaria/beta.pdf")
         pP=plot!(DataTime,γ[DataTimeRange],label=L"\gamma",lw=3,color=:green)
@@ -159,11 +148,16 @@ for i=1:Iterations
         savefig(pP,"figs/Bavaria/parameters3.pdf")
         debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[end]+30],label=L"\beta",legend=:left,
                      lw=3,title="Bavaria",color=:red,tickfontsize=12)
-        savefig(debuggP,"figs/Bavaria/dbug.pdf")
+
 
    end
+
+
+
+
+
+
+
 end
-#prolong data
-β[nAssim-sponge+1:end].=β[nAssim-sponge]
-γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
-δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
+
+

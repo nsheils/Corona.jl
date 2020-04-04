@@ -10,6 +10,7 @@ using LinearAlgebra
 using JLD2
 using Plots
 using LaTeXStrings
+using FileIO
 function read(dataset::String,data="raw/JHU/COVID-19/csse_covid_19_data/csse_covid_19_time_series/")
     if dataset=="Confirmed"
         #        Confirmed=CSV.read(data*"time_series_19-covid-Confirmed.csv");
@@ -257,28 +258,32 @@ function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0),window=ones(size(u)[1]))
     v=collect(adj_sol(0:tspan[1])')
 end
 function update(u,v,α,β,γ,δ)
-    nt,ne=size(u)
-    f=dfda(u)
-    δβ=zeros(nt)
-    δγ=zeros(nt)
-    δδ=zeros(nt)
-    for i=1:4
-        δβ=δβ+ v[:,i] .* f[:,i,1]
-        δγ=δγ+ v[:,i] .* f[:,i,2]
-        δδ=δδ+ v[:,i] .* f[:,i,3]
+    if α==0.0
+        return  β,γ,δ
+    else
+        nt,ne=size(u)
+        f=dfda(u)
+        δβ=zeros(nt)
+        δγ=zeros(nt)
+        δδ=zeros(nt)
+        for i=1:4
+            δβ=δβ+ v[:,i] .* f[:,i,1]
+            δγ=δγ+ v[:,i] .* f[:,i,2]
+            δδ=δδ+ v[:,i] .* f[:,i,3]
+        end
+        βₙ=copy(β)
+        γₙ=copy(γ)
+        δₙ=copy(δ)
+        βₙ[1:nt]=max.(β[1:nt]-α*δβ,0.0)
+        γₙ[1:nt]=max.(γ[1:nt]-α*δγ,0.0)
+        δₙ[1:nt]=max.(δ[1:nt]-α*δδ,0.0)
+        return  βₙ,γₙ,δₙ
     end
-    βₙ=copy(β)
-    γₙ=copy(γ)
-    δₙ=copy(δ)
-    βₙ[1:nt]=β[1:nt]-α*δβ
-    γₙ[1:nt]=γ[1:nt]-α*δγ
-    δₙ[1:nt]=δ[1:nt]-α*δδ
-#    βₙ,γₙ,δₙ
-    abs.(βₙ),abs.(γₙ),abs.(δₙ)
 end
 
 function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
-                    α=1.0e-12,itMax=2048,window=ones(size(u)[1]))
+                    α=1.0e-12,itMax=2048,window=ones(size(u)[1]),
+                    method="bisection")
     u=corona.forward(β,γ,δ,u₀,tspan)
     function probe(α)
         β₁,γ₁,δ₁=update(u,v,α,β,γ,δ)
@@ -291,49 +296,57 @@ function linesearch(β,γ,δ,v,uₓ,u₀,tspan,
         C=I+R+D
         norm([C .* window;D .* window]-[Cₓ .* window;Dₓ .* window])
     end
-    function probe(αₐ,αₑ,nΔ=10)
+    function brute_force(αₐ,αₑ,nΔ=itMax)
+        J₀=probe(0.0)
         Δα=(αₑ-αₐ)
-        if (αₐ==αₑ) & (nΔ == 1)
-            αₘ=(αₐ+αₑ)/2
-            return αₘ, probe(αₘ)
-        else
-            Δ=αₐ .+ Δα*sort(rand(nΔ+1))
-            J=zeros(nΔ+1,2)
-            for  i=1:nΔ+1
-                J[i,:]=[Δ[i] probe(Δ[i])]
+        Δ=αₐ .+ Δα*sort(rand(nΔ+1))
+        J=zeros(nΔ+1,2)
+        for  i=1:nΔ+1
+            J[i,:]=[Δ[i] probe(Δ[i])]
+        end
+        αₘ=J[argmin(J[:,2]),1]
+        J₁=minimum(J[:,2])
+        β₁,γ₁,δ₁=update(u,v,αₘ,β,γ,δ)
+        return β₁,γ₁,δ₁,true,J₁,αₘ
+    end
+    function bisection(αₐ= 0.0,αₑ= α,itMax=itMax)
+        i=1
+        ϵ = 1/3
+        J₀=probe(0.0)
+        Jₑ=probe(αₑ)
+        if Jₑ<J₀
+            β₁,γ₁,δ₁=update(u,v,αₑ,β,γ,δ)
+            return β₁,γ₁,δ₁,true,Jₑ,αₑ
+        end
+        Jₐ=J₀
+        while i < itMax
+            #        αₘ=(αₐ+αₑ)/2
+            Δα=(αₑ-αₐ)
+            αₘ=αₐ+ rand()*Δα
+            Jₘ=probe(αₘ)
+            if (Jₘ<J₀) & (Δα/α<ϵ)
+                β₁,γ₁,δ₁=update(u,v,αₘ,β,γ,δ)
+                return β₁,γ₁,δ₁,true,Jₘ,αₘ
             end
-            αₘ=J[argmin(J[:,2]),1]
-            Jₘ=minimum(J[:,2])
-            return αₘ,Jₘ
+            if Jₘ < Jₐ
+                αₐ=αₘ
+                Jₐ=Jₘ
+            else
+                αₑ=αₘ
+                Jₑ=Jₘ
+            end
+            i=i+1
         end
+        #    println("$i failed")
+        return β,γ,δ,false,J₀,0.0
     end
-    ## Bisection
-    i=1
-    αₐ= 0.0
-    αₑ= α
-    ϵ = 1/3
-    J₀=probe(0.0)
-    Jₐ=J₀
-    while i < itMax
-        #        αₘ=(αₐ+αₑ)/2
-        Δα=(αₑ-αₐ)
-        αₘ=αₐ+ rand()*Δα
-#        αₘ,Jₘ=probe(αₘ-Δα/50,αₘ+Δα/50)
-        Jₘ=probe(αₘ)
-        if (Jₘ<J₀) & (Δα/α<ϵ)
-            return β₁,γ₁,γ₁=update(u,v,αₘ,β,γ,δ)
-        end
-        if Jₘ < Jₐ
-            αₐ=αₘ
-            Jₐ=Jₘ
-        else
-            αₑ=αₘ
-            Jₑ=Jₘ
-        end
-        i=i+1
+    ###########################
+    # calculation start
+    if method=="bisection"
+        β₁,γ₁,δ₁,success,Jfinal,α₁ = bisection(0.0,α,itMax)
+    else
+        β₁,γ₁,δ₁,success,Jfinal,α₁ = brute_force(0.0,α,itMax)
     end
-#    println("$i failed")
-    β,γ,δ
 end
 function extrapolate(y,Δx=1.0)
     y⁰=y[end]
@@ -348,6 +361,52 @@ function smooth(y,Δx=1.0)
     f⁰[end]=y[end]
     return f⁰
 end
+
+
+function save(Region,AssimTime,U,V,Uₓ,β,γ,δ,filename)
+    nAssim=length(AssimTime)
+    AssimTimeRange=1:nAssim
+    u=TimeArray(collect(AssimTime),U,["S", "I" ,"R" ,"D"])
+    v=TimeArray(collect(AssimTime),V,["S", "I" ,"R" ,"D"])
+    uₓ=Uₓ[AssimTime]
+    p=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
+    FileIO.save(filename,
+                "Region",Region,
+                "AssimTime",AssimTime,
+                "u",u,
+                "v",v,
+                "p",p,
+                "uₓ",uₓ)
+end
+
+
+
+
+function plot_solution(u,uₓ,title="Corona growth",yscale=:identity)
+    I=u[:I]
+    R=u[:R]
+    D=u[:D]
+    C=I .+R .+D
+    if yscale==:identity
+        P=scatter(uₓ[:Confirmed],legend=:topleft,color=:orange,title=title)
+        P=scatter!(uₓ[:Deaths],label="Deaths",color=:black,lw=3,tickfontsize=12)
+        P=plot!(C,label="C",color=:orange,lw=3)
+        P=plot!(I,label="I",color=:red,lw=3)
+        P=plot!(R,label="R",color=:green,lw=3)
+        P=plot!(D,label="D",color=:black,lw=3)
+    elseif yscale==:log10
+        P=scatter(uₓ[DataTime][:Confirmed].+1,legend=:topleft,
+                  color=:orange,title="Bavaria",yaxis=:log10)
+        P=scatter!(uₓ[DataTime][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
+        P=plot!(DataTime,sum(u[DataTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
+        P=plot!(DataTime,u[DataTimeRange,2] .+1,label="I",color=:red,lw=3)
+        P=plot!(DataTime,u[DataTimeRange,3] .+1.0,label="R",color=:green,lw=3)
+        P=plot!(DataTime,u[DataTimeRange,4] .+1.0,label="D",color=:black,lw=3,tickfontsize=12)
+    end
+    return P
+end
+
+
 
 
 end
