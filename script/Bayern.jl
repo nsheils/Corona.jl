@@ -11,6 +11,25 @@ using june
 using LaTeXStrings
 ############################################################
 rootdir="/home/jls/data/2020-Corona/"
+
+Iterations=1000000
+FilterFreq=100
+ScreenFreq=100
+PlotFreq=10000
+sponge=2
+############################################################
+ColdStart=true
+β₀=1/4*ones(nSimul+1)
+γ₀=1/7*ones(nSimul+1)
+δ₀=zeros(nSimul+1);
+############################################################
+parameter=DataFrame(
+parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge"],
+value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge])
+println(parameter)
+
+
+
 cd(rootdir)
 Today=Dates.today()
 ## Population size and Country names
@@ -54,21 +73,9 @@ uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 
 ########################################
 
-Δt=DataTimeSpan[2]-DataTimeSpan[1]
-β₀=((log(LastConfirmed)-log(FirstConfirmed))/Δt)*ones(nSimul+1)
-γ₀=1/7*ones(nSimul+1)
-δ₀=0.001*1/7*ones(nSimul+1);
-
-β₀=1/4*ones(nSimul+1)
-γ₀=1/7*ones(nSimul+1)
-δ₀=zeros(nSimul+1);
 
 
-β₀=0.0*ones(nSimul+1)
-γ₀=0.0*ones(nSimul+1)
-δ₀=zeros(nSimul+1);
 
-ColdStart=false
 if ColdStart == true
     printstyled("Cold Start";color=:red)
     β=β₀;γ=γ₀;δ=δ₀
@@ -76,7 +83,6 @@ else
     printstyled("Warm Start";color=:green)
     @load "data/Bavaria/model_parameters.jld"
 end
-sponge=14
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
 nAssim=length(AssimTime)
 AssimTimeSpan=(0.0,Float64(nAssim-1))
@@ -88,9 +94,8 @@ u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
-J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 α=1.0/J₀
-Iterations=100000
+J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 println(" with α= $α  and $Iterations Iterations ")
 for i=1:Iterations
     global u
@@ -98,20 +103,21 @@ for i=1:Iterations
     global β,γ,δ
     β,γ,δ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
                             u₀,AssimTimeSpan,α,2^12,W)
-#    β[nAssim+1:end].=β[nAssim]
-#    γ[nAssim+1:end].=γ[nAssim]
-#    δ[nAssim+1:end].=δ[nAssim]
-#    β[AssimTimeRange]=∂⁰(β[AssimTimeRange])
-#    γ[AssimTimeRange]=∂⁰(γ[AssimTimeRange])
-#    δ[AssimTimeRange]=∂⁰(δ[AssimTimeRange])
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
-    if mod(i,100) == 0
+    if mod(i,FilterFreq) == 0
         β=∂⁰(β)
         γ=∂⁰(γ)
-        δ=∂⁰(δ)    
-    end
-    if mod(i,100) == 0
+        δ=∂⁰(δ)
+        β[nAssim-sponge+1:end].=β[nAssim-sponge]
+        γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
+        δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
+        U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
+        V=TimeArray(collect(AssimTime),v,["S", "I" ,"R" ,"D"])
+        P=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
+        @save "data/Bavaria/solution.jld" AssimTime U V P
         @save "data/Bavaria/model_parameters.jld"  β γ δ
+    end
+    if mod(i,ScreenFreq) == 0
         global J=[J; norm([Cₓ.*W;Dₓ.*W]-[sum(u[:,2:4],dims=2).*W;u[:,4].*W])/J₀]
         if J[end]==minimum(J)
             color=:green 
@@ -123,11 +129,7 @@ for i=1:Iterations
         print(i," ")
         printstyled(J[end],"\n";color=color)
     end
-    if mod(i,100) == 0
-        U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
-        V=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
-        P=TimeArray(collect(AssimTime),[ β[AssimTimeRange] γ[AssimTimeRange] δ[AssimTimeRange] ],["β", "γ" ,"δ"])
-        @save "data/Bavaria/soloution.jld" AssimTime U V P
+    if mod(i,PlotFreq) == 0
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
@@ -163,3 +165,7 @@ for i=1:Iterations
 
    end
 end
+#prolong data
+β[nAssim-sponge+1:end].=β[nAssim-sponge]
+γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
+δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
