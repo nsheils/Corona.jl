@@ -98,6 +98,9 @@ for i=1:Iterations
                                           u₀,AssimTimeSpan,α,LineIterMax,W,
                                           "linesearch")
     if success
+        β[nAssim-sponge+1:end].=β[nAssim-sponge]
+        γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
+        δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
         @save "data/Bavaria/model_parameters.jld"  β γ δ
         corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
     else
@@ -126,18 +129,16 @@ for i=1:Iterations
         β=∂⁰(β)
         γ=∂⁰(γ)
         δ=∂⁰(δ)
-        β[nAssim-sponge+1:end].=β[nAssim-sponge]
-        γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
-        δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
         corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
         @save "data/Bavaria/model_parameters.jld"  β γ δ
     end
-    
+
+    U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
     if mod(i,PlotFreq) == 0
         P=corona.plot_solution(U,Data,"Bavaria")
         savefig(P,"figs/Bavaria/Development.pdf")
-        P=plot_solution(U,Data,"Bavaria",:log10)
-        savefig(lP,"figs/Bavaria/Developmentlog.pdf")
+        P=corona.plot_solution(U,Data,"Bavaria",:log10)
+        savefig(P,"figs/Bavaria/Developmentlog.pdf")
 
         pP=scatter(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
                 lw=3,title="Bavaria",color=:red,tickfontsize=12)
