@@ -18,6 +18,7 @@ ScreenFreq=100
 PlotFreq=100
 sponge=2
 LineIterMax=2^14
+LineRangeMax=1e-3
 ############################################################
 ColdStart=false
 β₀=1/4*ones(nSimul+1)
@@ -25,8 +26,8 @@ ColdStart=false
 δ₀=zeros(nSimul+1);
 ############################################################
 parameter=DataFrame(
-parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax"],
-value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax])
+parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
+value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
 println(parameter)
 
 
@@ -73,10 +74,6 @@ A=zeros(nGlobal,2);A[DataTimeRange,:]=values(Data)
 uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
 
 ########################################
-
-
-
-
 if ColdStart == true
     printstyled("Cold Start";color=:red)
     β=β₀;γ=γ₀;δ=δ₀
@@ -95,7 +92,7 @@ u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
-α=1.0/J₀
+α=LineRangeMax/J₀
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 println(" with α= $α  and $Iterations Iterations ")
 for i=1:Iterations

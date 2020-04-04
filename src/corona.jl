@@ -125,14 +125,14 @@ end
 
 
 
-function growth(u,β,γ,δ)
-    S=u[:,1]
-    I=u[:,2]
-    R=u[:,3]
-    D=u[:,4]
-
+function growth(u,β,γ,δ,t=timestamp(u))
+    S=values(u[:S])
+    I=values(u[:I])
+    R=values(u[:R])
+    D=values(u[:D])
     N=S+R+I+D
-    λ=β .*S ./N  - (γ+δ)
+    λ=values(β) .*S ./N  - (values(γ)+values(δ))
+    λ=TimeArray(t,λ[1:length(t)],["λ"])
 end
 
 
@@ -244,7 +244,7 @@ end
 
 function forward(β,γ,δ,u₀,tspan)
     p=[β γ δ]
-    problem=ODEProblem(sir!,u₀,tspan,p,maxiters=5e5)
+    problem=ODEProblem(sir!,u₀,tspan,p,maxiters=1e6)
     solution=solve(problem)
     u=collect(solution(0:tspan[2])')
 end
@@ -252,7 +252,7 @@ function backward(u,uₓ,β,γ,δ,tspan=(50.0,0.0),window=ones(size(u)[1]))
     nt,ne=size(u)
     p=[u β[1:nt] γ[1:nt] δ[1:nt] uₓ window]
     v₀=[0.0 ,0.0, 0.0, 0.0]
-    adj=ODEProblem(corona.sir_adj,v₀,tspan,p,maxiters=5e5)
+    adj=ODEProblem(corona.sir_adj,v₀,tspan,p,maxiters=1e6)
     adj_sol=solve(adj)
     v=collect(adj_sol(0:tspan[1])')
 end
