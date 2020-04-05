@@ -11,15 +11,26 @@ using june
 using LaTeXStrings
 ############################################################
 println("C O R O N A   ",String(:Italy))
-#rootdir="/home/tms-archiv/Daten/2020-Corona/"
-rootdir="/home/jls/data/2020-Corona/"
-startdir=pwd()
+############################################################
+rootdir      = "/home/jls/data/2020-Corona/"
+Iterations   = 1000000
+FilterFreq   = 10000000
+ScreenFreq   = 100
+PlotFreq     = 100
+sponge       = 30
+LineIterMax  = 2^12
+LineRangeMax = 1e-6
+ColdStart    = false
+############################################################
+Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
+push!(Actions,[Date(2020,03,20),"Kontaktverbot"])
+parameter=DataFrame(
+    parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
+    value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
+println(parameter)
 cd(rootdir)
 Today=Dates.today()
-
-println(Today)
 ## Population size and Country names
-
 println("Data read")
 D=corona.data(:Italy)
 S₀=D.population
@@ -37,9 +48,7 @@ DataTimeRange=D.TimeRange
 println("Outbreak : $OutbreakDate")
 println("Last Date: $LastDate ",  Int(values(D.cases[:Confirmed])[end]),
     "  ",Int(values(D.cases[:Deaths])[end]))
-
-
-##
+##################################################################################
 nDays=400
 SimulLast=FirstDate+Day(nDays)
 GlobalTime=FirstDate:Day(1):SimulLast
@@ -49,20 +58,20 @@ nSimul=length(SimulTime)
 SimulTimeSpan=(0.0,Float64(nSimul-1))
 SimulTimeRange=1:nSimul
 ##########################################
-A=zeros(nGlobal,2);A[DataIndexRange,:]=values(D)
+A=zeros(nGlobal,2);A[DataIndexRange,:]=values(Data)
 uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
+u₀=[S₀,values(D.cases[:Confirmed][OutbreakDate])[1],0.0,values(D.cases[:Deaths][OutbreakDate])[1]]
 ########################################
-
-
-
-β₀=1/4*ones(nSimul+1)
-γ₀=1/10*ones(nSimul+1)
-δ₀=zeros(nSimul+1);
-
-β=β₀;γ=γ₀;δ=δ₀
-@load "data/Italy/model_parameters.jld"
-
-sponge=1
+if ColdStart == true
+    β₀=1/4*ones(nSimul+1)
+    γ₀=1/7*ones(nSimul+1)
+    δ₀=zeros(nSimul+1);
+    printstyled("Cold Start";color=:red)
+    β=β₀;γ=γ₀;δ=δ₀
+else
+    printstyled("Warm Start";color=:green)
+    @load "data/Italy/model_parameters.jld"
+end
 AssimTime=OutbreakDate:Day(1):LastDate+Day(sponge)
 nAssim=length(AssimTime)
 AssimTimeSpan=(0.0,Float64(nAssim-1))
@@ -70,92 +79,79 @@ AssimTimeRange=1:nAssim
 nDataWindow=length(OutbreakDate:Day(1):LastDate)
 W=[ones(nDataWindow); zeros(sponge)]
 #DataWindow=TimeArray(collect(AssimTime),W,["Data Window"])
-##
-u₀=[S₀,values(D.cases[:Confirmed][OutbreakDate])[1],0.0,values(D.cases[:Deaths][OutbreakDate])[1]]
 u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
 Cₓ=values(uₓ[AssimTime][:Confirmed])
 Dₓ=values(uₓ[AssimTime][:Deaths])
 J₀=norm([Cₓ.*W;Dₓ.*W])
+α=LineRangeMax/J₀
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
-α=1.0e-1/J₀
-println("α: $α")
-a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
-##
-#β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,1024,W)
-##
-for i=1:10000
-    global u
-    a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
+println(" with α= $α  and $Iterations Iterations ")
+for i=1:Iterations
+    global u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
+    global v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,2^9,W)
-    β[nAssim+1:end].=β[nAssim]
-    γ[nAssim+1:end].=γ[nAssim]
-    δ[nAssim+1:end].=δ[nAssim]
-    β[DataIndexRange]=∂⁰(β)[DataIndexRange]
-    γ[DataIndexRange]=∂⁰(γ)[DataIndexRange]
-    δ[DataIndexRange]=∂⁰(δ)[DataIndexRange]
-    @save "data/Italy/model_parameters.jld"  β γ δ
-    u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
-
-    if mod(i,100) == 0
-        global J=[J; norm([Cₓ.*W;Dₓ.*W]-[sum(u[:,2:4],dims=2).*W;u[:,4].*W])/J₀]
-        println(i," ",J[end])
+    β,γ,δ,success,Jₑ,αₑ=corona.linesearch(β,γ,δ,v,values(uₓ[AssimTime]),
+                                          u₀,AssimTimeSpan,α,LineIterMax,W,
+                                          "linesearch")
+    if success
+        β[nAssim-sponge+1:end].=β[nAssim-sponge]
+        γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
+        δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
+        @save "data/Italy/model_parameters.jld"  β γ δ
+#        corona.save(:Italy,AssimTime,u,v,Data,β,γ,δ,"data/Italy/solution.jld")
+    else
+        β,γ,δ,success,Jₑ,αₑ=corona.linesearch(
+            β,γ,δ,v,values(uₓ[AssimTime]),
+            u₀,AssimTimeSpan,α,LineIterMax,W,
+            "brute_force")
     end
-    if mod(i,100) == 0
-        @save "data/Italy/model_parameters.jld"  β γ δ J
-        I=u[:,2]
-        R=u[:,3]
-        D=u[:,4]
-        global P=scatter(uₓ[OutbreakDate:Day(1):LastDate][:Confirmed],legend=:topleft,color=:orange,title="Italy")
-        P=scatter!(uₓ[OutbreakDate:Day(1):LastDate][:Deaths],label="Deaths",color=:black,lw=3,tickfontsize=12)
-        P=plot!(AssimTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
-        P=plot!(AssimTime,u[:,2],label="I",color=:red,lw=3)
-        P=plot!(AssimTime,u[:,3],label="R",color=:green,lw=3)
 
-        P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
-        display(P)
-        savefig("figs/Italy/Devlopment.pdf")
-        global lP=scatter(uₓ[OutbreakDate:Day(1):LastDate][:Confirmed],legend=:topleft,
-            color=:orange,title="Italy",yaxis=:log10)
-        lP=scatter!(uₓ[OutbreakDate:Day(1):LastDate][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
-        lP=plot!(AssimTime,sum(u[AssimTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
-        lP=plot!(AssimTime,u[AssimTimeRange,2],label="I",color=:red,lw=3)
-        lP=plot!(AssimTime,u[AssimTimeRange,3] .+1.0,label="R",color=:green,lw=3)
-#        savefig(lP,"figs/Italy/CIR_log.pdf")
-        lP=plot!(AssimTime,u[AssimTimeRange,4] .+1.0,label="D",color=:black,lw=3,tickfontsize=12)
-        savefig(lP,"figs/Italy/Devlopment_log.pdf")
-        βₘ=maximum(β)
-#        pP=plot(DataWindow.*βₘ,lw=0,color=:whitesmoke,fill=(0,:whitesmoke),α=0.9,legend=:topleft)
-        pP=plot(DataTime,β[DataIndexRange],label=L"\beta",legend=:left,
+    u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
+    if mod(i,ScreenFreq) == 0
+        global J=[J; Jₑ/J₀]
+        if J[end]==minimum(J)
+            color=:green
+        elseif J[end]>minimum(J)
+            color=:red
+        else
+            color=:blue
+        end
+        print(i," ")
+        printstyled(J[end],"\n";color=color)
+    end
+    if mod(i,FilterFreq) == 0
+        println("Filtering")
+        β=∂⁰(β)
+        γ=∂⁰(γ)
+        δ=∂⁰(δ)
+        corona.save(:Italy,AssimTime,u,v,Data,β,γ,δ,"data/Italy/solution.jld")
+        @save "data/Italy/model_parameters.jld"  β γ δ
+    end
+
+    U=TimeArray(collect(AssimTime),u,["S", "I" ,"R" ,"D"])
+    if mod(i,PlotFreq) == 0
+        P=corona.plot_solution(U,Data,"Italy")
+        savefig(P,"figs/Italy/Development.pdf")
+        P=corona.plot_solution(U,Data,"Italy",:log10)
+#        for action in eachrow(Actions)
+#            d=[action[1],action[1]]
+#            v=[1,10000]
+#            P=plot!(d,v,lw=3,label=action[2])
+#        end
+
+        savefig(P,"figs/Italy/Development_log.pdf")
+
+        pP=scatter(DataTime,β[DataIndexRange],label=L"\beta",legend=:left,
                 lw=3,title="Italy",color=:red,tickfontsize=12)
+#        for action in eachrow(Actions)
+#            d=action[1]
+#            plot!([d,d],[minimum(β[DataIndexRange]),maximum(β[DataIndexRange])] ,label=action[2],lw=3)
+#        end
         savefig(pP,"figs/Italy/beta.pdf")
         pP=plot!(DataTime,γ[DataIndexRange],label=L"\gamma",lw=3,color=:green)
         pP=plot!(DataTime,δ[DataIndexRange],label=L"\delta",lw=3,color=:black)
         display(pP)
         savefig(pP,"figs/Italy/parameters3.pdf")
-        debuggP=plot(β[AssimTimeRange[1]:AssimTimeRange[1]+12],label=L"\beta",legend=:left,
-                     lw=3,title="Italy",color=:red,tickfontsize=12)
-        savefig(debuggP,"figs/Italy/dbug.pdf")
 
    end
 end
-##
-
-
-
-β[nAssim+1:end].=β[nAssim]
-γ[nAssim+1:end].=γ[nAssim]
-δ[nAssim+1:end].=δ[nAssim]
-
-β[nAssim+1:end].=corona.extrapolate(β[nAssim-3:nAssim])
-γ[nAssim+1:end].=corona.extrapolate(γ[nAssim-3:nAssim])
-δ[nAssim+1:end].=corona.extrapolate(δ[nAssim-3:nAssim])
-@save "data/Italy/model_parameters.jld"  β γ δ
-Parameter=TimeArray(SimulTime,[β[SimulTimeRange] γ[SimulTimeRange] δ[SimulTimeRange]],["β", "γ", "δ"])
-writetimearray(Parameter, "data/Italy/Parameter.csv")#Save data
-################### Prognosis ################
-u=corona.forward(β,γ,δ,u₀,SimulTimeSpan)
-Prognosis=TimeArray(SimulTime,u,["S","I","R","D"])
-@save "data/Italy/final.jld" Prognosis uₓ β γ δ u₀ SimulTime SimulTimeSpan SimulTimeRange
-writetimearray(Prognosis, "data/Italy/Prognosis.csv")
-cd(startdir)

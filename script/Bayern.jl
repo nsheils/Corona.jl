@@ -1,4 +1,4 @@
-vusing corona
+using corona
 using Plots
 using JLD2
 using DifferentialEquations
@@ -15,7 +15,7 @@ Iterations   = 1000000
 FilterFreq   = 10000000
 ScreenFreq   = 100
 PlotFreq     = 100
-sponge       = 1
+sponge       = 30
 LineIterMax  = 2^12
 LineRangeMax = 1e-6
 ColdStart    = false
@@ -23,9 +23,8 @@ ColdStart    = false
 Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
 push!(Actions,[Date(2020,03,20),"Vorläufige Ausgangsbeschränkung"])
 parameter=DataFrame(
-    parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax"],
-    value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax])
-println(parameter)
+    parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax","Region"],
+    value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax,Region])
 cd(rootdir)
 Today=Dates.today()
 ## Population size and Country names
@@ -35,6 +34,8 @@ FirstConfirmed=values(Confirmed[1])[1]
 LastConfirmed=values(Confirmed[end])[1]
 Deaths=Cases[:C]
 DataTime=timestamp(Cases)
+println("Last Date ",DataTime[end])
+println(parameter)
 ###########################################
 S₀=13076721.0
 u₀=[S₀,values(Confirmed[1])[1],0.0,values(Deaths[1])[1]]
@@ -112,7 +113,6 @@ for i=1:Iterations
             "brute_force")
     end
 
-
     u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
     if mod(i,ScreenFreq) == 0
         global J=[J; Jₑ/J₀]
@@ -140,6 +140,12 @@ for i=1:Iterations
         P=corona.plot_solution(U,Data,"Bavaria")
         savefig(P,"figs/Bavaria/Development.pdf")
         P=corona.plot_solution(U,Data,"Bavaria",:log10)
+        for action in eachrow(Actions)
+            d=[action[1],action[1]]
+            v=[1,10000]
+            global P=plot!(d,v,lw=3,label=action[2])
+        end
+
         savefig(P,"figs/Bavaria/Developmentlog.pdf")
 
         pP=scatter(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
@@ -158,13 +164,6 @@ for i=1:Iterations
 
 
    end
-
-
-
-
-
-
-
 end
 
 

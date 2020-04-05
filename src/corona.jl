@@ -120,39 +120,22 @@ timestamp(D::data)=timestamp(D.cases)
     linewidth --> 3
     D.cases
 end
-
-
-    
-
-
-
-function growth(u,β,γ,δ,t=timestamp(u))
+function growth(u,p,t=timestamp(u))
     S=values(u[:S])
     I=values(u[:I])
     R=values(u[:R])
     D=values(u[:D])
     N=S+R+I+D
+    β=p[:β]
+    γ=p[:γ]
+    δ=p[:δ]
     λ=values(β) .*S ./N  - (values(γ)+values(δ))
     λ=TimeArray(t,λ[1:length(t)],["λ"])
 end
-
-
-
-
-
-"Classic Epedemic Model  Hethcote (2000), added deaths"
+"Classic Epidemology Model  Hethcote (2000), added deaths"
 function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Float64)
-    it=Int(floor(t)+1.0)
-    Δt=t-floor(t)
-    nt,ne=size(p)
-    if it == 1
-        β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
-    elseif it == nt
-        β,γ,δ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
-    else
-        β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
-    end
-    β,γ,δ=p[it,:] 
+    β,γ,δ=p[Int64(floor(t)+1),1:3]
+#     β,γ,δ=lagrange(p[:,1:3],t)
 ##
     S,I,R,D=u[1:4]
     N=S+I+R+D
@@ -164,17 +147,8 @@ function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Fl
 end
 
 function dfdu(p::Array{Float64,2},t::Float64)
-    it=Int(floor(t)+1)
-    Δt=t-floor(t)
-    nt,ne=size(p)
-    if it == nt
-        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it,:] -p[it-1,:])
-    elseif it == 1
-        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it,:])
-    else
-        S,I,R,D,β,γ,δ=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
-    end
-    S,I,R,D,β,γ,δ=p[it,:]
+    S,I,R,D,β,γ,δ=p[Int64(floor(t)+1),1:7]
+#     S,I,R,D,β,γ,δ=lagrange(p[:,1:7],t,0)
     N=S+I+R+D
     A=zeros(4,4)
     A[1,1]=-β*I*(N+S)/N^2
@@ -194,17 +168,8 @@ end
 
 
 function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
-    it=Int(floor(t)+1)
-    Δt=t-floor(t)
-    nt,ne=size(p)
-    if it == nt
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it,:] -p[it-1,:])
-    elseif it == 1
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it+1,:] -p[it,:])
-    else
-        S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
-    end
-    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,:]
+    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[Int64(floor(t)+1),1:10]
+#    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=lagrange(p[:,1:10],t,0)
     A=dfdu(p,t)
     # Observations
     OBS=[0 0;1 0;1 0;1 1]
@@ -395,15 +360,72 @@ function plot_solution(u,uₓ,title="Corona growth",yscale=:identity)
         P=plot!(R,label="R",color=:green,lw=3)
         P=plot!(D,label="D",color=:black,lw=3)
     elseif yscale==:log10
-        P=scatter(uₓ[DataTime][:Confirmed].+1,legend=:topleft,
-                  color=:orange,title="Bavaria",yaxis=:log10)
-        P=scatter!(uₓ[DataTime][:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
-        P=plot!(DataTime,sum(u[DataTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
-        P=plot!(DataTime,u[DataTimeRange,2] .+1,label="I",color=:red,lw=3)
-        P=plot!(DataTime,u[DataTimeRange,3] .+1.0,label="R",color=:green,lw=3)
-        P=plot!(DataTime,u[DataTimeRange,4] .+1.0,label="D",color=:black,lw=3,tickfontsize=12)
+        P=scatter(uₓ[:Confirmed].+1,legend=:topleft,
+                  color=:orange,title=title,yaxis=:log10)
+        P=scatter!(uₓ[:Deaths] .+1,label="Deaths",color=:black,lw=3,tickfontsize=12)
+        P=plot!(C,label="C",color=:orange,lw=3)
+        P=plot!(I,label="I",color=:red,lw=3)
+        P=plot!(R.+1,label="R",color=:green,lw=3)
+        P=plot!(D.+1,label="D",color=:black,lw=3)
     end
     return P
+end
+
+
+"Lagrange Interpolation, t=0:n"
+function lagrange(y::Array{Float64,1},t::Float64,order=2)
+    tᵢ = floor(t)  ;nᵢ =Int(tᵢ )+1
+    if order == 0
+        return y[nᵢ]
+    end
+    tᵢ₊= floor(t+1);nᵢ₊=Int(tᵢ₊)+1
+    tᵢ₋= floor(t-1);nᵢ₋=Int(tᵢ₋)+1
+    if nᵢ₋ <  1
+        yᵢ =y[nᵢ]
+        yᵢ₊=y[nᵢ₊]
+        return yᵢ + (t-tᵢ) *  (yᵢ₊-yᵢ)/(tᵢ₊-tᵢ)
+    elseif nᵢ >= length(y)
+        yᵢ =y[end]
+        yᵢ₋=y[end-1]
+        tᵢ = Float64(length(y)-1)
+        tᵢ₋= Float64(length(y)-2)
+        return yᵢ + (t-tᵢ) *  (yᵢ-yᵢ₋)/(tᵢ-tᵢ₋)
+    else
+        yᵢ =y[nᵢ]
+        yᵢ₋=y[nᵢ₋]
+        yᵢ₊=y[nᵢ₊]
+        l =
+            yᵢ₋*(t-tᵢ )/(tᵢ₋-tᵢ ) *(t-tᵢ₊)/(tᵢ₋-tᵢ₊) + 
+            yᵢ *(t-tᵢ₋)/(tᵢ -tᵢ₋) *(t-tᵢ₊)/(tᵢ -tᵢ₊) + 
+            yᵢ₊*(t-tᵢ₋)/(tᵢ₊-tᵢ₋) *(t-tᵢ )/(tᵢ₊-tᵢ )
+    end
+end
+function lagrange(y::Array{Float64,2},t::Float64,order=2)
+    tᵢ = floor(t)  ;nᵢ =Int(tᵢ )+1
+    if order == 0
+        return y[nᵢ,:]
+    end
+    tᵢ₊= floor(t+1);nᵢ₊=Int(tᵢ₊)+1
+    tᵢ₋= floor(t-1);nᵢ₋=Int(tᵢ₋)+1
+    if nᵢ₋ <  1
+        yᵢ =y[nᵢ,:]
+        yᵢ₊=y[nᵢ₊,:]
+        return yᵢ + (t-tᵢ) *  (yᵢ₊-yᵢ)./(tᵢ₊-tᵢ)
+    elseif nᵢ >= length(y)
+        yᵢ =y[:,end]
+        yᵢ₋=y[:,end-1]
+        tᵢ = Float64(length(y)-1)
+        tᵢ₋= Float64(length(y)-2)
+        return yᵢ + (t-tᵢ) *  (yᵢ-yᵢ₋)./(tᵢ-tᵢ₋)
+    else
+        yᵢ =y[:,nᵢ]
+        yᵢ₋=y[:,nᵢ₋]
+        yᵢ₊=y[:,nᵢ₊]
+        l =
+            yᵢ₋*(t-tᵢ )/(tᵢ₋-tᵢ ) *(t-tᵢ₊)/(tᵢ₋-tᵢ₊) + 
+            yᵢ *(t-tᵢ₋)/(tᵢ -tᵢ₋) *(t-tᵢ₊)/(tᵢ -tᵢ₊) + 
+            yᵢ₊*(t-tᵢ₋)/(tᵢ₊-tᵢ₋) *(t-tᵢ )/(tᵢ₊-tᵢ )
+    end
 end
 
 
