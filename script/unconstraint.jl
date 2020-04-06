@@ -1,5 +1,5 @@
 using corona
-using Plots 
+using Plots
 using JLD2
 using DifferentialEquations
 using CSV
@@ -15,138 +15,127 @@ cd(rootdir)
 Today=Dates.today()
 ## Populatuion size and Country names
 Population_0=CSV.read(rootdir*"data/population.csv",header=false);
-S₀=Float64(Population_0[Population_0[!,:Column1].=="United Kingdom",:][!,:Column2][1])
+S₀=Float64(Population_0[Population_0[!,:Column1].=="Germany",:][!,:Column2][1])
 Countries=String.(Population_0[:Column1])
 ################### Data and Data Intervall ####################################
 Confirmed=Float64.(corona.merge_datasets(corona.read("Confirmed"),Countries))
 Deaths=   Float64.(corona.merge_datasets(corona.read("Deaths"),Countries));
+Data=merge(
+    TimeSeries.rename(Confirmed[Symbol("Germany")],:Confirmed),
+    TimeSeries.rename(Deaths[Symbol("Germany")],:Deaths ))
 Trend=corona.trend(Confirmed,14,40)
 Growths=Trend[end]
 #
-FirstDate=timestamp(Deaths)[1]
-LastDate=timestamp(Deaths)[end]
+FirstDate=timestamp(Data)[1]
+LastDate=timestamp(Data)[end]
+DataTime=FirstDate:Day(1):LastDate
+nData=length(DataTime)
+DataTimeSpan=(0.0,Float64(nData)-1)
+DataTimeRange=1:nData
+
 ################################################################################
 @load "data/outbreak.jld2" Outbreak
-OutbreakDate=Outbreak[Symbol("United Kingdom")]
-DataTime=OutbreakDate:Day(1):LastDate
-nData=length(DataTime)
-tspan=(0.0,Float64(nData)-1)
-NDays=400
-SimulRange=OutbreakDate:Day(1):OutbreakDate+Day(NDays)
-tsimul=(0.0,Float64(NDays))
-###########################################
-
-u₀=[S₀,Float64(values(Confirmed[Symbol("United Kingdom")][OutbreakDate])[1]),0.0,0.0]
-
-β₀=1/4*ones(NDays+10)
-γ₀=1/7*ones(NDays+10)
-δ₀=0.001*1/7*ones(NDays+10);
-uₓ=zeros(NDays+10)
-uₓ[DataTime]=values(merge(Confirmed[Symbol("United Kingdom")],Deaths[Symbol("United Kingdom")])[DataTime]);
+OutbreakDate=Outbreak[Symbol("Germany")]
+#@save "data/outbreak.jld2" Outbreak
+#
+nDays=400
+SimulLast=FirstDate+Day(nDays)
+GlobalTime=FirstDate:Day(1):SimulLast
+nGlobal=length(GlobalTime)
+SimulTime=OutbreakDate:Day(1):SimulLast
+nSimul=length(SimulTime)
+SimulTimeSpan=(0.0,Float64(nSimul-1))
+SimulTimeRange=1:nSimul
+##########################################
+A=zeros(nGlobal,2);A[DataTimeRange,:]=values(Data)
+uₓ=TimeArray(GlobalTime,A,TimeSeries.colnames(Data))
+u₀=[S₀,Float64(values(Confirmed[Symbol("Germany")][OutbreakDate])[1]),0.0,0.0]
+β₀=1/4*ones(nSimul+1)
+γ₀=1/7*ones(nSimul+1)
+δ₀=0.001*1/7*ones(nSimul+1);
 ##
-u₈=zeros(NDays+10)
-u₈[DataTime]=corona.forward(β₀,γ₀,δ₀,u₀,tsimul)
-Simul=plot(DataTime, uₓ,lw=3)
-Simul=plot(SimulRange, u₈)
+u₈=corona.forward(β₀,γ₀,δ₀,u₀,SimulTimeSpan)
+Simul=plot(uₓ[DataTime],lw=3)
+Simul=plot!(DataTime, u₈[DataTimeRange,2])
 plot(Confirmed,legend=:topleft,lw=3)
 savefig("figs/Confirmed.pdf")
 plot(Trend,lw=3)
 savefig("figs/Trend_avg.pdf")
-##
+########################################
 β,γ,δ=β₀,γ₀,δ₀
-γ=γ₀/2
-u=corona.forward(β,γ,δ,u₀,tspan)
-Cₓ=uₓ[:,1]
-Dₓ=uₓ[:,2]
-J=[norm([Cₓ;Dₓ]-[u[:,2]+u[:,3]+u[:,4];u[:,4]])/norm([Cₓ;Dₓ])]
+@load "data/Germany_model_parameters.jld"
 
+AssimTime=OutbreakDate:Day(1):LastDate
+#AssimTime=OutbreakDate:Day(1):Date(2020,03,14)
+nAssim=length(AssimTime)
+AssimTimeSpan=(0.0,Float64(nAssim-1))
+AssimTimeRange=1:nAssim
 
-α=1.0e-12
-@load "data/United_Kingdom_model_parameters.jld" 
-for i=1:10000
+u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
+Cₓ=values(uₓ[AssimTime][:Confirmed])
+Dₓ=values(uₓ[AssimTime][:Deaths])
+J=[norm([Cₓ;Dₓ]-[sum(u[AssimTimeRange,:],dims=2);u[AssimTimeRange,4]])/norm([Cₓ;Dₓ])]
+J₀=norm([Cₓ;Dₓ])
+α=1.0e-7/J₀
+println("α: $α")
+for i=1:20000
     global u
-    a=corona.backward(u,uₓ,β,δ,γ,reverse(tspan))
+    a=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan));
     global β,γ,δ
-    β,γ,δ=corona.linesearch(β,γ,δ,a,uₓ,u₀,tspan,α,100)
-    β=∂⁰(β)
-    γ=∂⁰(γ)
-    δ=∂⁰(δ)
-    u=corona.forward(β,γ,δ,u₀,tspan)
+    β,γ,δ=corona.linesearch(β,γ,δ,a,values(uₓ[AssimTime]),u₀,AssimTimeSpan,α,100)
+    β[AssimTimeRange]=∂⁰(β)[AssimTimeRange]
+    γ[AssimTimeRange]=∂⁰(γ)[AssimTimeRange]
+    δ[AssimTimeRange]=∂⁰(δ)[AssimTimeRange]
+    u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
     if mod(i,1000) == 0
+        @save "data/Germany_model_parameters.jld" FirstDay β γ δ J
         I=u[:,2]
         R=u[:,3]
         D=u[:,4]
-        Cₓ=uₓ[:,1]
-        Dₓ=uₓ[:,2]
-        Iₓ=Cₓ-R-Dₓ
         global J=[J; norm([Cₓ;Dₓ]-[u[:,2]+u[:,3]+u[:,4];u[:,4]])/norm([Cₓ;Dₓ])]
         println(i," ",J[end])
-        global P=scatter(DataTime,uₓ[:,1],legend=:topleft,
-                         label="Confirmed",color=:orange,title="United Kingdom")
-        P=scatter!(DataTime,uₓ[:,2],label="Deaths",color=:black,lw=3)
-        P=plot!(DataTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
-        P=plot!(DataTime,u[:,2],label="I",color=:red,lw=3)
-        P=plot!(DataTime,u[:,3],label="R",color=:green,lw=3)
-        P=plot!(DataTime,u[:,4],label="D",color=:black,lw=3)
+        global P=scatter(uₓ[AssimTime][:Confirmed],legend=:topleft,color=:orange,title="Germany")
+        P=scatter!(uₓ[AssimTime][:Deaths],label="Deaths",color=:black,lw=3)
+        P=plot!(AssimTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
+        P=plot!(AssimTime,u[:,2],label="I",color=:red,lw=3)
+        P=plot!(AssimTime,u[:,3],label="R",color=:green,lw=3)
+        P=plot!(AssimTime,u[:,4],label="D",color=:black,lw=3)
         display(P)
-        savefig("figs/United_Kingdom.pdf")
-        global lP=scatter(DataTime,uₓ[:,1],legend=:topleft,
-                         label="Confirmed",color=:orange,title="United Kingdom",yaxis=:log10)
-        lP=scatter!(DataTime,uₓ[:,2] .+1,label="Deaths",color=:black,lw=3)
-        lP=plot!(DataTime,sum(u[:,2:4],dims=2),label="C",color=:orange,lw=3)
-        lP=plot!(DataTime,u[:,2] .+1,label="I",color=:red,lw=3)
-        lP=plot!(DataTime,u[:,3] .+1.0,label="R",color=:green,lw=3)
-        lP=plot!(DataTime,u[:,4] .+1.0,label="D",color=:black,lw=3)
-        savefig(lP,"figs/United_Kingdom_log.pdf")
-        FirstDay=OutbreakDate
-        @save "data/United_Kingdom_model_parameters.jld" FirstDay β γ δ J
-        pP=plot(DataTime,β[1:nData],label=L"\beta",legend=:left,
-                lw=3,title="United Kingdom",color=:red)
-        pP=plot!(DataTime,γ[1:nData],label=L"\gamma",lw=3,color=:green)
-        pP=plot!(DataTime,δ[1:nData],label=L"\delta",lw=3,color=:black)
+        savefig("figs/Germany.pdf")
+        global lP=scatter(uₓ[AssimTime][:Confirmed].+1,legend=:topleft,
+            color=:orange,title="Germany",yaxis=:log10)
+        lP=scatter!(uₓ[AssimTime][:Deaths] .+1,label="Deaths",color=:black,lw=3)
+        lP=plot!(AssimTime,sum(u[AssimTimeRange,2:4],dims=2),label="C",color=:orange,lw=3)
+        lP=plot!(AssimTime,u[AssimTimeRange,2] .+1,label="I",color=:red,lw=3)
+        lP=plot!(AssimTime,u[AssimTimeRange,3] .+1.0,label="R",color=:green,lw=3)
+#        savefig(lP,"figs/Germany_CIR_log.pdf")
+        lP=plot!(AssimTime,u[AssimTimeRange,4] .+1.0,label="D",color=:black,lw=3)
+        savefig(lP,"figs/Germany_log.pdf")
+        pP=plot(AssimTime,β[AssimTimeRange],label=L"\beta",legend=:left,
+                lw=3,title="Germany",color=:red)
+        savefig(pP,"figs/Germany_beta.pdf")
+        pP=plot!(AssimTime,γ[AssimTimeRange],label=L"\gamma",lw=3,color=:green)
+        pP=plot!(AssimTime,δ[AssimTimeRange],label=L"\delta",lw=3,color=:black)
         display(pP)
-        savefig(pP,"figs/United_Kingdom_parameters3.pdf")
+        savefig(pP,"figs/Germany_parameters3.pdf")
    end
 end
-SIM=DataFrame()
-SIM.dates=collect(DataTime)
-SIM.S=u[:,1]
-SIM.I=u[:,2]
-SIM.R=u[:,3]
-SIM.D=u[:,4]
-SIM.β=β[1:nData]
-SIM.γ=γ[1:nData]
-SIM.δ=δ[1:nData]
-United Kingdom=TimeArray(SIM,timestamp=:dates) 
-@save "data/United_Kingdom_final.jld" United Kingdom
-@save "data/United_Kingdom_model_parameters.jld" β γ δ
-savefig(P,"figs/United_Kingdom.pdf")
-savefig(lP,"figs/United_Kingdom_log.pdf")
-n=(1:length(J))*100
-plot(n,J,xlabel="Iterations",ylabel="J",yaxis=:log10,leg=false,lw=3,title="United Kingdom")
-savefig("figs/United_Kingdom_convergence.pdf")
-pP=plot(DataTime,β[1:nData],label=L"\beta",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
-pP=plot!(DataTime,γ[1:nData],label=L"\gamma",lw=3,color=:green)
-pP=plot!(DataTime,δ[1:nData],label=L"\delta",lw=3,color=:black)
-display(pP)
-savefig(pP,"figs/United_Kingdom_parameters3.pdf")
-pP=plot(DataTime,β[1:nData],label=L"\beta",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
-pP=plot!(DataTime,γ[1:nData],label=L"\gamma",lw=3,color=:green)
-savefig(pP,"figs/United_Kingdom_parameters.pdf")
-σ=β./γ;
-pS=plot(DataTime,σ[1:nData],label=L"\sigma",legend=:left,
-        lw=3,title="United Kingdom",color=:red)
-savefig(pS,"figs/United_Kingdom_Sigma.pdf")
-μ=δ./γ
-pM=plot(DataTime,μ[1:nData],label=L"\mu",legend=:left,
-        lw=3,title="United Kingdom",color=:black)
-savefig(pM,"figs/United_Kingdom_Mortality.pdf")
+## prolong parameters
+β[nAssim+1:end].=β[nAssim]
+γ[nAssim+1:end].=γ[nAssim]
+δ[nAssim+1:end].=δ[nAssim]
+#Save data
+################### Prognosis ################
+u=corona.forward(β,γ,δ,u₀,SimulTimeSpan)
+Prognosis=TimeArray(SimulTime,u,["S","I","R","D"])
+@save "data/Germany_final.jld" Prognosis uₓ β γ δ
+PrognosisPlot=scatter(uₓ[DataTime],label=["Confirmed" "Deaths"],
+            title="Prognosis Germany",legend=:left,color=[:orange :black])
+PrognosisPlot=plot!(SimulTime, u,label=["S" "I" "R" "D"],lw=3,color=[:blue :red :green :black])
 
+savefig(PrognosisPlot,"figs/Germany_Prognosis.pdf")
+Parameter=TimeArray(SimulTime,[β[SimulTimeRange] γ[SimulTimeRange] δ[SimulTimeRange]],
+    ["β", "γ", "δ"])
 
-
-
-
-
-
+writetimearray(Prognosis, "data/Germany_Prognosis.csv")
+writetimearray(Parameter, "data/Germany_Parameter.csv")

@@ -11,21 +11,28 @@ using june
 using LaTeXStrings
 ############################################################
 rootdir      = "/home/jls/data/2020-Corona/"
-Iterations   = 1000000
-FilterFreq   = 10000000
+Iterations   = 10000
+FilterFreq   = 10000
 ScreenFreq   = 100
 PlotFreq     = 100
 sponge       = 30
 LineIterMax  = 2^12
 LineRangeMax = 1e-6
 ColdStart    = false
+Region       = :Bavaria
 ############################################################
-Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
-push!(Actions,[Date(2020,03,20),"Vorläufige Ausgangsbeschränkung"])
+cd(rootdir)
+govactfile="raw/GOV/Bavaria/actions.csv"
+if isfile(govactfile) 
+    Actions=CSV.read(govactfile)
+    println(Actions)
+else
+    wd=pwd()
+    println("No GOV Actions $wd*$govactfile")
+end
 parameter=DataFrame(
     parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax","Region"],
     value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax,Region])
-cd(rootdir)
 Today=Dates.today()
 ## Population size and Country names
 Cases=readtimearray("raw/RKI/bayern.csv",header=false)
@@ -105,7 +112,7 @@ for i=1:Iterations
         γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
         δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
         @save "data/Bavaria/model_parameters.jld"  β γ δ
-        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
+#        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
     else
         β,γ,δ,success,Jₑ,αₑ=corona.linesearch(
             β,γ,δ,v,values(uₓ[AssimTime]),
@@ -127,11 +134,11 @@ for i=1:Iterations
         printstyled(J[end],"\n";color=color)
     end
     if mod(i,FilterFreq) == 0
-        println("Filtering")
+#        println("Filtering")
         β=∂⁰(β)
         γ=∂⁰(γ)
         δ=∂⁰(δ)
-        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
+#        corona.save(:Bavaria,AssimTime,u,v,Data,β,γ,δ,"data/Bavaria/solution.jld")
         @save "data/Bavaria/model_parameters.jld"  β γ δ
     end
 
@@ -140,20 +147,20 @@ for i=1:Iterations
         P=corona.plot_solution(U,Data,"Bavaria")
         savefig(P,"figs/Bavaria/Development.pdf")
         P=corona.plot_solution(U,Data,"Bavaria",:log10)
-        for action in eachrow(Actions)
-            d=[action[1],action[1]]
-            v=[1,10000]
-            global P=plot!(d,v,lw=3,label=action[2])
-        end
+#        for action in eachrow(Actions)
+#            d=[action[1],action[1]]
+#            v=[1,10000]
+#            P=plot!(d,v,lw=3,label=action[2])
+#        end
 
         savefig(P,"figs/Bavaria/Developmentlog.pdf")
 
         pP=scatter(DataTime,β[DataTimeRange],label=L"\beta",legend=:left,
                 lw=3,title="Bavaria",color=:red,tickfontsize=12)
-        for action in eachrow(Actions)
-            d=action[1]
-            plot!([d,d],[minimum(β[DataTimeRange]),maximum(β[DataTimeRange])] ,label=action[2],lw=3)
-        end
+#       for action in eachrow(Actions)
+#            d=action[1]
+#            plot!([d,d],[minimum(β[DataTimeRange]),maximum(β[DataTimeRange])] ,label=action[2],lw=3)
+#        end
         savefig(pP,"figs/Bavaria/beta.pdf")
         pP=plot!(DataTime,γ[DataTimeRange],label=L"\gamma",lw=3,color=:green)
         pP=plot!(DataTime,δ[DataTimeRange],label=L"\delta",lw=3,color=:black)

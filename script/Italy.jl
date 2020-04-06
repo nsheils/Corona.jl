@@ -21,6 +21,7 @@ sponge       = 30
 LineIterMax  = 2^12
 LineRangeMax = 1e-6
 ColdStart    = false
+Region       = :Italy
 ############################################################
 Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
 push!(Actions,[Date(2020,03,20),"Kontaktverbot"])

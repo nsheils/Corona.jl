@@ -13,24 +13,29 @@ using LaTeXStrings
 println("C O R O N A   ",String(:Germany))
 ############################################################
 rootdir      = "/home/jls/data/2020-Corona/"
-Iterations   = 1000000
-FilterFreq   = 10000000
+Iterations   = 10000
+FilterFreq   = 10
 ScreenFreq   = 100
 PlotFreq     = 100
-sponge       = 30
+sponge       = 60
 LineIterMax  = 2^12
 LineRangeMax = 1e-6
 ColdStart    = false
+Region       = :Germany
 ############################################################
-Actions=DataFrame(Date=Date(2020,03,16),Action="Schulschließung")
-push!(Actions,[Date(2020,03,20),"Kontaktverbot"])
+cd(rootdir)
+govactfile="raw/GOV/Germany/actions.csv"
+if isfile(govactfile) 
+    Actions=CSV.read(govactfile)
+    println(Actions)
+else
+    wd=pwd()
+    println("No GOV Actions $wd*$govactfile")
+end
 parameter=DataFrame(
     parameter=["rootdir", "ColdStart", "Iterations", "FilterFreq", "ScreenFreq","PlotFreq","sponge","LineIterMax","LineRangeMax","Region"],
     value=[rootdir, ColdStart, Iterations, FilterFreq, ScreenFreq,PlotFreq,sponge,LineIterMax,LineRangeMax,Region])
-
-
-
-cd(rootdir)
+println(parameter)
 Today=Dates.today()
 ## Population size and Country names
 println("Data read")
@@ -88,6 +93,7 @@ J₀=norm([Cₓ.*W;Dₓ.*W])
 α=LineRangeMax/J₀
 J=[norm([Cₓ.*W;Dₓ.*W]-[sum(u[AssimTimeRange,:],dims=2).*W;u[AssimTimeRange,4].*W])/J₀]
 println(" with α= $α  and $Iterations Iterations ")
+diagnostic_message=true
 for i=1:Iterations
     global u=corona.forward(β,γ,δ,u₀,AssimTimeSpan)
     global v=corona.backward(u,values(uₓ[AssimTime]),β,δ,γ,reverse(AssimTimeSpan),W);
@@ -100,7 +106,7 @@ for i=1:Iterations
         γ[nAssim-sponge+1:end].=γ[nAssim-sponge]
         δ[nAssim-sponge+1:end].=δ[nAssim-sponge]
         @save "data/Germany/model_parameters.jld"  β γ δ
-#        corona.save(:Germany,AssimTime,u,v,Data,β,γ,δ,"data/Germany/solution.jld")
+#        #corona.save(:Germany,AssimTime,u,v,Data,β,γ,δ,"data/Germany/solution.jld")
     else
         β,γ,δ,success,Jₑ,αₑ=corona.linesearch(
             β,γ,δ,v,values(uₓ[AssimTime]),
@@ -121,12 +127,15 @@ for i=1:Iterations
         print(i," ")
         printstyled(J[end],"\n";color=color)
     end
-    if mod(i,FilterFreq) == 0
-        println("Filtering")
-        β=∂⁰(β)
+    if mod(i,FilterFreq) ==  0
+        if diagnostic_message == true
+            print("Filtering γ,δ\n")
+            global diagnostic_message= false
+        end
+#        β=∂⁰(β)
         γ=∂⁰(γ)
         δ=∂⁰(δ)
-        corona.save(:Germany,AssimTime,u,v,Data,β,γ,δ,"data/Germany/solution.jld")
+        #corona.save(:Germany,AssimTime,u,v,Data,β,γ,δ,"data/Germany/solution.jld")
         @save "data/Germany/model_parameters.jld"  β γ δ
     end
 

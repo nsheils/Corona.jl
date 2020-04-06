@@ -13,8 +13,8 @@ using LaTeXStrings
 println("C O R O N A   ",String(:US))
 ############################################################
 rootdir      = "/home/jls/data/2020-Corona/"
-Iterations   = 1000000
-FilterFreq   = 10000000
+Iterations   = 10000
+FilterFreq   = 1000
 ScreenFreq   = 100
 PlotFreq     = 100
 sponge       = 30
@@ -125,7 +125,7 @@ for i=1:Iterations
         β=∂⁰(β)
         γ=∂⁰(γ)
         δ=∂⁰(δ)
-        corona.save(:US,AssimTime,u,v,Data,β,γ,δ,"data/US/solution.jld")
+#        corona.save(:US,AssimTime,u,v,Data,β,γ,δ,"data/US/solution.jld")
         @save "data/US/model_parameters.jld"  β γ δ
     end
 
