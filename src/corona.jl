@@ -134,9 +134,14 @@ function growth(u,p,t=timestamp(u))
 end
 "Classic Epidemology Model  Hethcote (2000), added deaths"
 function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Float64)
-    β,γ,δ=p[Int64(floor(t)+1),1:3]
-#     β,γ,δ=lagrange(p[:,1:3],t)
-##
+    it=Int64(floor(t)+1)
+    β,γ,δ=p[it,1:3]
+    nt,ne=size(p)
+    if it < nt
+        β,γ,δ=(p[it,1:3] + p[it+1,1:3])/2
+    end
+    #     β,γ,δ=lagrange(p[:,1:3],t)
+    ##
     S,I,R,D=u[1:4]
     N=S+I+R+D
     du[1]=-β*I*S/N
@@ -147,7 +152,12 @@ function sir!(du::Array{Float64,1},u::Array{Float64,1},p::Array{Float64,2},t::Fl
 end
 
 function dfdu(p::Array{Float64,2},t::Float64)
-    S,I,R,D,β,γ,δ=p[Int64(floor(t)+1),1:7]
+    it=Int64(floor(t)+1)
+    nt,ne=size(p)
+    S,I,R,D,β,γ,δ=p[it,1:7]
+    if it < nt
+        β,γ,δ=(p[it,5:7] + p[it,5:7])/2
+    end
 #     S,I,R,D,β,γ,δ=lagrange(p[:,1:7],t,0)
     N=S+I+R+D
     A=zeros(4,4)
@@ -168,8 +178,13 @@ end
 
 
 function sir_adj(v::Array{Float64,1},p::Array{Float64,2},t::Float64)
-    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[Int64(floor(t)+1),1:10]
-#    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=lagrange(p[:,1:10],t,0)
+    it=Int64(floor(t)+1)
+    nt,ne=size(p)
+    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=p[it,1:10]
+    if it < nt
+        β,γ,δ=(p[it,5:7] + p[it,5:7])/2
+    end
+    #    S,I,R,D,β,γ,δ,Cₓ,Dₓ,window=lagrange(p[:,1:10],t,0)
     A=dfdu(p,t)
     # Observations
     OBS=[0 0;1 0;1 0;1 1]
