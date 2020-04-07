@@ -1,0 +1,13 @@
+# Julia ignore
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+deps/deps.jl
+
+# Temporary files
+*~
+*.swp
+*.swo
+
+# Data
+data
