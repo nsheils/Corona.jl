@@ -13,7 +13,7 @@ screenfreq   = 100;
 sponge       = 60;
 maxlineiters = 4096;
 maxlinerange = 1e-6;
-coldstart    = true;
+coldstart    = false;
 region       = "Italy";
 
 ############################################################

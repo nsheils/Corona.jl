@@ -6,26 +6,28 @@ using Unicode
 ###### structures #################
 
 mutable struct DataConfig
+  dump_path::String
+  data_path::String
   sources::DefaultDict{AbstractString,String}
   loaders::DefaultDict{AbstractString,String}
-  args_filename_builder::DefaultDict{AbstractString,Tuple}
-  args_data_loader::DefaultDict{AbstractString,Tuple}
-  args_population_loader::DefaultDict{AbstractString,Tuple}
-  data_paths::DefaultDict{AbstractString,String}
+  data_dirs::DefaultDict{AbstractString,String}
+  args_filename_builder::DefaultDict{AbstractString,Any}
+  args_data_loader::DefaultDict{AbstractString,Any}
+  args_population_loader::DefaultDict{AbstractString,Any}
   data_maps::DefaultDict{AbstractString,Matrix{<:Real}}
   outbreak_conditions::DefaultDict{AbstractString,Function}
-  save_path::String
     function DataConfig()
       new(
+        "dump", # dump_path
+        "data", # data_path
         DefaultDict{AbstractString,String}("native"), # sources
         DefaultDict{AbstractString,String}("native"), # loaders
-        DefaultDict{AbstractString,Tuple}(k -> (k,); passkey=true), # args_filename_builder
-        DefaultDict{AbstractString,Tuple}(k -> (k,); passkey=true), # args_data_loader
-        DefaultDict{AbstractString,Tuple}(k -> (k,); passkey=true), # args_population_loader
-        DefaultDict{AbstractString,String}(""), # data_paths
+        DefaultDict{AbstractString,String}(""), # data_dirs
+        DefaultDict{AbstractString,Any}(k -> k; passkey=true), # args_filename_builder
+        DefaultDict{AbstractString,Any}(k -> k; passkey=true), # args_data_loader
+        DefaultDict{AbstractString,Any}(k -> k; passkey=true), # args_population_loader
         DefaultDict{AbstractString,Matrix{<:Real}}(Diagonal(ones(Int,4))), # data_maps
         DefaultDict{AbstractString,Function}(c -> findfirst(values(c[:,1].>0))), # outbreak_conditions
-        "data/results", # save_path
       )
     end
 end
@@ -48,22 +50,12 @@ struct DataStruct{T<:Integer,D<:TimeType}
 end
 
 ###### filename builder #################
-function build_filename(config::DataConfig,
-                        region::AbstractString;
-                        path=""::AbstractString,
-                        ext=""::AbstractString)
-    fn = _build_filename(config.args_filename_builder[region]...)
-    if !isempty(path)
-        fn = rstrip(path,'/')*"/"*fn
-    end
-    if !isempty(ext)
-        fn = fn*"."*lstrip(ext)
-    end
-    return fn
+function build_filename(config::DataConfig,region::AbstractString)
+    _build_filename(config.args_filename_builder[region])
 end
 
-_build_filename(region::AbstractString,subregion::AbstractString) =
-        _build_filename(region)*"-"*_build_filename(subregion)
+_build_filename(region::NTuple{2,AbstractString}) =
+        _build_filename(region[2])*"-"*_build_filename(region[1])
 
 function _build_filename(region::AbstractString)
     char_map = Dict('ä' => "ae", 'ö' => "oe", 'ü' => "ue", 'ß' => "ss", ' ' => "_")
@@ -80,13 +72,13 @@ end
 
 function load_data(config::DataConfig,region::AbstractString)
     source = config.sources[region]
-    path = config.data_paths[source]
+    path = config.data_path
     loader = config.loaders[source]
-    cases = _load_data(Val(Symbol(loader)),config.args_data_loader[region]...;
-            (isempty(path) ? () : (path = path,))...)
+    cases = _load_data(Val(Symbol(loader)),config.args_data_loader[region],
+                        joinpath(path,config.data_dirs[loader]))
     outbreakdate = get_outbreak_date(config,cases,loader)
     lastdate = timestamp(cases)[end]
-    population = _load_population(config.args_population_loader[region]...)
+    population = _load_population(config.args_population_loader[region],path)
     datamap = config.data_maps[loader]
     DataStruct(cases,outbreakdate,lastdate,population,datamap,source)
 end
@@ -112,14 +104,15 @@ end
 
 function save(config::DataConfig,region::AbstractString,da::DA;
               interactive=false::Bool)
-    fn = build_filename(config,region)
-    fp = joinpath(config.save_path,fn)*".jld2"
-    if interactive && isfile(fp)
-        if input("overwrite `$fp'? ") != "y"
+    path = joinpath(config.dump_path,build_filename(config,region))
+    mkpath(path)
+    filename = joinpath(path,"da.jld2")
+    if interactive && isfile(filename)
+        if input("overwrite `$filename'? ") != "y"
             return
         end
     end
-    _save(fp,da)
+    _save(filename,da)
 end
 
 function _save(filename::AbstractString,da::DA)
@@ -132,7 +125,6 @@ function _save(filename::AbstractString,da::DA)
 end
 
 function load_model_params(config::DataConfig,region::AbstractString)
-    fn = build_filename(config,region)
-    fp = joinpath(config.save_path,fn)*".jld2"
-    load(fp,"model_params")
+    filename = joinpath(config.dump_path,build_filename(config,region),"da.jld2")
+    FileIO.load(filename,"model_params")
 end

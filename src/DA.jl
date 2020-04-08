@@ -58,7 +58,7 @@ struct DA{T<:Real,D<:TimeType}
         lrows = indexin(overlap,t)
         rrows = indexin(overlap,timestamp(data))
         values(ux)[lrows,:] = values(data)[rrows,:]
-        meta(ux)["lasy_day_idxs"] = lrows[end]
+        meta(ux)["last_day_idxs"] = lrows[end]
 
         # Initialize window
         W = TimeArray(t,zeros(length(t)),[:W])
@@ -92,7 +92,7 @@ reconstruct_data(da::DA) =
     TimeArray(timestamp(da.data), values(da.result)*da.datamap', colnames(da.data))
 
 function propagate_solution!(da::DA)
-    idxs = meta(da.data)["lasy_day_idxs"]
+    idxs = meta(da.data)["last_day_idxs"]
     values(da.model_params)[idxs+1:end,:] .= values(da.model_params)[idxs:idxs,:]
 end
 

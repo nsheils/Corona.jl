@@ -4,10 +4,9 @@ using DataFrames
 
 ###### John Hopkins University data loader #################
 
-_load_data(source::Val{:JHU}, args...; path="data/raw/JHU") = __load_data(source, args..., path)
-__load_data(source::Val{:JHU}, region::Union{AbstractString,Regex}, path::AbstractString) = __load_data(source, region, r".*", path)
+_load_data(source::Val{:JHU}, region::Union{AbstractString,Regex}, path::AbstractString) = _load_data(source, (r".*", region), path)
 
-function __load_data(source::Val{:JHU}, region::Union{AbstractString,Regex}, subregion::Union{AbstractString,Regex}, path::AbstractString)
+function _load_data(source::Val{:JHU}, region::NTuple{2,Union{AbstractString,Regex}}, path::AbstractString)
 
     basepath = path*"/csse_covid_19_data/csse_covid_19_time_series"
     fns = Dict("Confirmed" => "time_series_covid19_confirmed_global.csv",
@@ -20,11 +19,11 @@ function __load_data(source::Val{:JHU}, region::Union{AbstractString,Regex}, sub
         df[ismissing.(df[:,Symbol("Province/State")]),Symbol("Province/State")] .= ""
 
         dates = Date.(String.(names(df)[5:end]),"m/d/y")+Dates.Year(2000)
-        sub = occursin.(region,df[:,Symbol("Country/Region")]) .& occursin.(subregion,df[:,Symbol("Province/State")])
+        sub = occursin.(region[2],df[:,Symbol("Country/Region")]) .& occursin.(region[1],df[:,Symbol("Province/State")])
         if any(sub)
             ta[key] = TimeArray(dates,sum(Array{Int64}(df[sub,5:end]),dims=1)[1,:],[Symbol(key),])
         else
-            error("no entry in `$fp' for $subregion, $region")
+            error("no entry in `$fp' for $region")
         end
     end
 

@@ -1,5 +1,11 @@
 ##### Configuration file #####
 
+# dump path
+dataconfig.dump_path = "dump"
+
+# data path
+dataconfig.data_path = "data"
+
 # source names by region
 push!(dataconfig.sources,
     "Germany" => "JHU",
@@ -15,6 +21,12 @@ push!(dataconfig.loaders,
     "RKI" => "native",
 )
 
+# data dirs by loader
+push!(dataconfig.data_dirs,
+    "JHU" => "JHU",
+    "RKI" => "RKI",
+)
+
 # filename builder configuration
 push!(dataconfig.args_filename_builder,
     "Bayern" => ("Germany","Bayern"),
@@ -22,7 +34,7 @@ push!(dataconfig.args_filename_builder,
 
 # data loader arguments by region
 push!(dataconfig.args_data_loader,
-    "Bayern" => ("Bayern",),
+    "Bayern" => "Bayern",
     "France" => ("France",r"^$"),
 )
 
@@ -30,12 +42,6 @@ push!(dataconfig.args_data_loader,
 push!(dataconfig.args_population_loader,
     "Bayern" => ("Germany","Bayern"),
     "France" => ("France",r"^$"),
-)
-
-# source paths by source
-push!(dataconfig.data_paths,
-    "native" => "data/raw/native",
-    "JHU" => "data/raw/JHU"
 )
 
 # data maps by loader

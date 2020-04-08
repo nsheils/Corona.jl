@@ -4,15 +4,14 @@ using DataFrames
 
 ###### native data loader #################
 
-_load_data(source::Val{:native}, args...; path="data/raw/native"::AbstractString) = __load_data(source, args..., path)
 
-__load_data(source::Val{:native}, region::AbstractString, path::AbstractString) = __load_data(source, region, r".*", path)
+_load_data(source::Val{:native}, region::AbstractString, path::AbstractString) = _load_data(source, (r".*", region), path)
 
-function __load_data(source::Val{:native}, region::AbstractString, subregion::Union{AbstractString,Regex}, path::AbstractString)
+function _load_data(source::Val{:native}, region::Tuple{Union{AbstractString,Regex},AbstractString}, path::AbstractString)
 
-    fn = _build_filename(region)
+    fn = _build_filename(region[2])
     fp = rstrip(path,'/')*"/"*fn*".csv"
-    if fn != region
+    if fn != region[2]
         @warn("loading data from `"*fp*"'")
     end
 
@@ -20,7 +19,7 @@ function __load_data(source::Val{:native}, region::AbstractString, subregion::Un
     df = CSV.read(fp,header=header,copycols=true,dateformat="yyyy-mm-dd",ignoreemptylines=true)
     df[ismissing.(df.Region),:Region] .= ""
     df.Region = strip.(df.Region)
-    sub = occursin.(subregion,df.Region)
+    sub = occursin.(region[1],df.Region)
     if any(sub)
         cases = TimeArray(df.Date[sub],Array{Int64}(df[sub,3:4]),Symbol.(header[3:4]))
     else

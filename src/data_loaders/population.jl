@@ -2,11 +2,9 @@ using CSV
 
 ###### population loader #################
 
-_load_population(region,args...;path="data/raw"::AbstractString) = __load_population(region,args...,path)
+_load_population(region::Union{AbstractString,Regex},path::AbstractString) = _load_population((r"^$",region),path)
 
-__load_population(region::Union{AbstractString,Regex},path::AbstractString) = __load_population(region,r"^$",path)
-
-function __load_population(region::Union{AbstractString,Regex},subregion::Union{AbstractString,Regex},path::AbstractString)
+function _load_population(region::NTuple{2,Union{AbstractString,Regex}},path::AbstractString)
     header = ["Subregion","Region", "Population"];
     types = Dict(1=>Union{Missing,String}, 2=>Union{Missing,String}, 3=>Int)
     fp = rstrip(path,'/')*"/population.csv"
@@ -15,7 +13,7 @@ function __load_population(region::Union{AbstractString,Regex},subregion::Union{
         df[ismissing.(df[:,col]),col] .= ""
         df[:,col] = strip.(df[:,col])
     end
-    sub = occursin.(region,df.Region) .& occursin.(subregion,df.Subregion)
+    sub = occursin.(region[2],df.Region) .& occursin.(region[1],df.Subregion)
     try
         df[sub,:Population][1]
     catch e
