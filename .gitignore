@@ -10,5 +10,5 @@ deps/deps.jl
 *.swo
 
 # Data
-data
-dump
+raw
+results

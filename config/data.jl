@@ -1,10 +1,10 @@
 ##### Configuration file #####
 
-# dump path
-dataconfig.dump_path = "dump"
+# results path
+dataconfig.results_path = "results"
 
 # data path
-dataconfig.data_path = "data"
+dataconfig.rawdata_path = "raw"
 
 # source names by region
 push!(dataconfig.sources,

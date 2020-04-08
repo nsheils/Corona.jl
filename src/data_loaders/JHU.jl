@@ -8,7 +8,7 @@ _load_data(source::Val{:JHU}, region::Union{AbstractString,Regex}, path::Abstrac
 
 function _load_data(source::Val{:JHU}, region::NTuple{2,Union{AbstractString,Regex}}, path::AbstractString)
 
-    basepath = path*"/csse_covid_19_data/csse_covid_19_time_series"
+    basepath = path*"/COVID-19/csse_covid_19_data/csse_covid_19_time_series"
     fns = Dict("Confirmed" => "time_series_covid19_confirmed_global.csv",
                   "Deaths" => "time_series_covid19_deaths_global.csv")
 
