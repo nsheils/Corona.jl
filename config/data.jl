@@ -13,6 +13,8 @@ push!(dataconfig.sources,
     "Italy" => "JHU",
     "France" => "JHU",
     "China" => "JHU",
+    "US" => "JHU",
+    "King" => "JHU",
 )
 
 # data loaders by source
@@ -29,19 +31,22 @@ push!(dataconfig.data_dirs,
 
 # filename builder configuration
 push!(dataconfig.args_filename_builder,
-    "Bayern" => ("Germany","Bayern"),
+    "Bayern" => ("Bayern","Germany"),
+    "King" => ("King","Washington","US"),
 )
 
 # data loader arguments by region
 push!(dataconfig.args_data_loader,
     "Bayern" => "Bayern",
-    "France" => ("France",r"^$"),
+    "France" => (r"^$","France"),
+    "King" => ("King","Washington","US"),
 )
 
 # population loader arguments by region
 push!(dataconfig.args_population_loader,
-    "Bayern" => ("Germany","Bayern"),
-    "France" => ("France",r"^$"),
+    "Bayern" => ("Bayern","Germany"),
+    "France" => (r"^$","France"),
+    "King" => ("King","Washington"),
 )
 
 # data maps by loader

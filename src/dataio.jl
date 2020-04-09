@@ -54,6 +54,14 @@ function build_filename(config::DataConfig,region::AbstractString)
     _build_filename(config.args_filename_builder[region])
 end
 
+function _build_filename(region::NTuple{N,AbstractString}) where {N}
+    fn = _build_filename(region[1])
+    for i=2:N
+        fn = string(_build_filename(region[i]),"-",fn)
+    end
+    fn
+end
+
 _build_filename(region::NTuple{2,AbstractString}) =
         _build_filename(region[2])*"-"*_build_filename(region[1])
 
@@ -62,7 +70,7 @@ function _build_filename(region::AbstractString)
     fn = region
     fn = Unicode.normalize(fn,compat=true,stripcc=true,rejectna=true)
     fn = join(haskey(char_map,c) ? char_map[c] : c for c in fn)
-    fn = titlecase(fn)
+    fn = titlecase(fn,strict=false)
     fn = Unicode.normalize(fn,stripmark=true)
     fn = replace(fn, r"[\W]" => "")
     return fn
