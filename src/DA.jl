@@ -300,6 +300,13 @@ function linesearch!(da::DA,
         p₁,success,J₁,α₁ = bisection(0.0,α,maxiters)
     elseif method=="brute_force"
         p₁,success,J₁,α₁ = brute_force(0.0,α,maxiters)
+    elseif method=="plot"
+        J=zeros(maxiters,2)
+        αrange = range(0,α,length=maxiters)
+        for (i,αᵢ) in enumerate(αrange)
+            J[i,:] = [αᵢ probe(αᵢ)]
+        end
+        return J
     else
         throw(ArgumentError("method `$method' unknown"))
     end
