@@ -10,11 +10,11 @@ maxiters     = 10000000;
 tolerance    = 0.001;
 filterfreq   = 10;
 screenfreq   = 100;
-sponge       = 60;
+sponge       = 5;
 maxlineiters = 4096;
 maxlinerange = 1e-6;
-coldstart    = false;
-region       = "Italy";
+coldstart    = true;
+region       = "King";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -67,17 +67,22 @@ end
 printfmt(" with α= {:.4e} and tolerance {}\n",α,tolerance)
 printfmt("└ maximum number of iterations is {}\n\n",maxiters)
 
+## Test
+# Corona.forward!(da);
+# v = Corona.backward(da);
+# J = Corona.linesearch!(da,v,α=α,method="plot",maxiters=maxlineiters)
+# error()
+
 ### Exectue data assimilation
 Corona.forward!(da);
 try
     for i=1:maxiters
         v = Corona.backward(da);
         success,Je,_ = Corona.linesearch!(da,v,α=α,method="bisection",maxiters=maxlineiters);
-        if success
-            Corona.propagate_solution!(da)
-        else
-            success,Je,_ = Corona.linesearch!(da,v,α=α,method="brute_force");
+        if !success
+            success,Je,_ = Corona.linesearch!(da,v,α=α,method="brute_force",maxiters=10*maxlineiters);
         end
+        Corona.propagate_solution!(da);
         Corona.forward!(da);
 
         if mod(i,screenfreq) == 0
