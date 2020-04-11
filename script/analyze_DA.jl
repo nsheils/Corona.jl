@@ -3,64 +3,73 @@ using Plots
 using FileIO, JLD2
 using TimeSeries
 using LaTeXStrings
-region="Italy"
 
 ##
-it = load("/home/jls/data/2020-Corona/results/Italy/da.jld2")
-#
-it = load("results/Italy/da.jld2")
+region="New York City"
+regiondir="US-New_York-New_York"
+figpath=joinpath("figs",regiondir)
+filename=joinpath("results",regiondir,"da.jld2")
 
 ##
-itC=rename(it["result"].I .+ it["result"].R .+ it["result"].D,:I_R_D => :C)
-
-globtime = timestamp(it["result"])
-datatime = globtime[1:meta(it["data"])["last_day_idxs"]]
+da = load(filename)
 
 ##
-scatter(it["data"][datatime].Confirmed,color=:orange,Atickfontsize=12,title=region,legend=:topleft)
-scatter!(it["data"][datatime].Deaths,color=:black)
+daC=rename(da["result"].I .+ da["result"].R .+ da["result"].D,:I_R_D => :C)
 
-plot!(itC[datatime],legend=:topleft,color=:orange,lw=3)
-plot!(it["result"][datatime].I,color=:red, lw=3)
-plot!(it["result"][datatime].R,color=:green, lw=3)
-plot!(it["result"][datatime].D,color=:black, lw=3)
+globtime = timestamp(da["result"])
+datatime = globtime[1:meta(da["data"])["last_day_idxs"]]
 
 ##
-savefig("/home/jls/data/2020-Corona/figs/Italy/da.pdf")
+scatter(da["data"][datatime].Confirmed,color=:orange,Atickfontsize=12,title=region,legend=:topleft)
+scatter!(da["data"][datatime].Deaths,color=:black)
+
+plot!(daC[datatime],legend=:topleft,color=:orange,lw=3)
+plot!(da["result"][datatime].I,color=:red, lw=3)
+plot!(da["result"][datatime].R,color=:green, lw=3)
+plot!(da["result"][datatime].D,color=:black, lw=3)
+
+##
+savefig(joinpath(figpath,"da.pdf"))
 
 
 ##
-scatter(it["data"][datatime].Confirmed,color=:orange,
+scatter(da["data"][datatime].Confirmed,color=:orange,
  tickfontsize=12,title=region,legend=:topleft,yaxis=:log10)
-scatter!(it["data"][datatime].Deaths .+ 1,color=:black,yaxis=:log10)
+scatter!(da["data"][datatime].Deaths .+ 1,color=:black,yaxis=:log10)
+plot!(daC[datatime],legend=:topleft,color=:orange,lw=3)
+plot!(da["result"][datatime].I,color=:red, lw=3)
+plot!(da["result"][datatime].R .+ 1 ,color=:green, lw=3)
+plot!(da["result"][datatime].D .+ 1,color=:black, lw=3)
 
-plot!(itC[datatime],legend=:topleft,color=:orange,lw=3)
-plot!(it["result"][datatime].I,color=:red, lw=3)
-plot!(it["result"][datatime].R .+ 1 ,color=:green, lw=3)
-plot!(it["result"][datatime].D .+ 1,color=:black, lw=3)
+##
+# savefig("/home/jls/data/2020-Corona/figs/Italy/da_log.pdf")
+savefig(joinpath(figpath,"da_log.pdf"))
 
-savefig("/home/jls/data/2020-Corona/figs/Italy/da_log.pdf")
-
-
-
-plot(it["model_params"][datatime].β,lw=3,label=L"\beta",color=:red)
-savefig("/home/jls/data/2020-Corona/figs/Italy/beta.pdf")
-
-
-
-
+##
+scatter(da["model_params"][datatime].β,lw=3,label=L"\beta",title=region,color=:blue)
+scatter!(da["model_params"][datatime].γ,lw=3,label=L"\gamma",title=region,color=:red)
+scatter!(da["model_params"][datatime].δ,lw=3,label=L"\delta",title=region,color=:orange)
 
 
 ##
-scatter(it["data"][datatime].Confirmed,color=:orange,tickfontsize=12,title=region,legend=:topleft)
-scatter!(it["data"][datatime].Deaths,color=:black)
-
-plot!(itC,legend=:topleft,color=:orange,lw=3)
-plot!(it["result"].I,color=:red, lw=3)
-plot!(it["result"].R,color=:green, lw=3)
-plot!(it["result"].D,color=:black, lw=3)
+t=Date(2020,03,21):Day(1):Date(2020,04,08)
+σ = da["model_params"][t].β./(da["model_params"][t].γ.+da["model_params"][t].δ)
+scatter(σ,lw=3,label=L"\sigma",title=region,color=:blue)
 
 ##
-savefig("/home/jls/data/2020-Corona/figs/Italy/da_pre.pdf")
+savefig(joinpath(figpath,"da_sigma.pdf"))
+
+
+##
+scatter(da["data"][datatime].Confirmed,color=:orange,tickfontsize=12,title=region,legend=:topleft)
+scatter!(da["data"][datatime].Deaths,color=:black)
+
+plot!(daC,legend=:topleft,color=:orange,lw=3)
+plot!(da["result"].I,color=:red, lw=3)
+plot!(da["result"].R,color=:green, lw=3)
+plot!(da["result"].D,color=:black, lw=3)
+
+##
+savefig(joinpath(figpath,"da_fc.pdf"))
 
 ""

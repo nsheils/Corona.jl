@@ -45,17 +45,18 @@ else
 end
 
 ### Initialize data assimilation
-da = Corona.DA(data.cases, init_vals,
+bl = Corona.Baseline(data.cases, init_vals,
                init_mp, datamap = data.map,
                start = data.outbreakdate,
                stop = timestamp(data.cases)[end] + Day(sponge)
               );
 
+da=DA()
+
 
 ### Initialize residual
 J = Array{Float64,1}()
-J0 = norm(values(da.data).*values(da.window))
-
+J0 = da.J
 α=maxlinerange/J0;
 
 ### Print some other information
@@ -77,6 +78,20 @@ printfmt("└ maximum number of iterations is {}\n\n",maxiters)
 Corona.forward!(da);
 try
     for i=1:maxiters
+        α=1e-12
+        da=DA(da,α)
+
+        =linesearch(da,αₘ)
+
+
+    end
+
+
+
+
+
+
+
         v = Corona.backward(da);
         success,Je,_ = Corona.linesearch!(da,v,α=α,method="bisection",maxiters=maxlineiters);
         if !success

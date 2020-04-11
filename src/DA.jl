@@ -3,18 +3,22 @@ using LinearAlgebra
 
 ###### structures #################
 
-struct DA{T<:Real,D<:TimeType}
+mutable struct Baseline{T<:Real,D<:TimeType}
     data::TimeArray{T,2,D}
-    datamap::Matrix{T}
-    window::TimeArray{T,1,D}
-    result::TimeArray{T,2,D}
-    model_params::TimeArray{T,2,D}
+    C::Matrix{T}
+    σ::TimeArray{T,1,D}
+    u::TimeArray{T,2,D}
+    p::TimeArray{T,2,D}
 
-    function DA(
+    function Baseline(da::DA{T,D}) where {T,D}
+        new{T,D}(da.data,da.C,da.σ,da.u,da.p)
+    end
+
+    function Baseline(
                 data::TimeArray{<:Real,2,D},
-                init_vals::Vector{<:Real},
-                model_params::Union{Dict{Symbol,<:Real},TimeArray{<:Real,2,D}};
-                datamap=missing::Union{Missing,Matrix{<:Real}},
+                u₀::Vector{<:Real},
+                p::Union{Dict{Symbol,<:Real},TimeArray{<:Real,2,D}};
+                C=missing::Union{Missing,Matrix{<:Real}},
                 start=timestamp(data)[1]::D,
                 stop=start+Day(30)::Period,
                 step=Day(1)::Period
@@ -49,30 +53,27 @@ struct DA{T<:Real,D<:TimeType}
             error("step must be a positive time period")
         end
 
-        # DA time
+        # time
         t = start:step:stop
 
         # Copy data to working data array ux
-        ux = TimeArray(t,zeros(length(t),size(data,2)),colnames(data),Dict{String,Any}())
+        uₓ = TimeArray(t,zeros(length(t),size(data,2)),colnames(data),Dict{String,Any}())
         overlap = intersect(t,timestamp(data))
         lrows = indexin(overlap,t)
         rrows = indexin(overlap,timestamp(data))
-        values(ux)[lrows,:] = values(data)[rrows,:]
-        meta(ux)["last_day_idxs"] = lrows[end]
+        values(uₓ)[lrows,:] = values(data)[rrows,:]
+        meta(uₓ)["last_day_idxs"] = lrows[end]
 
         # Initialize window
-        W = TimeArray(t,zeros(length(t)),[:W])
-        values(W)[lrows] .= 1.0
-
-        # Initialize simulation data array
-        u = TimeArray(t,repeat(float(init_vals'),length(t)),var_names)
+        σ = TimeArray(t,zeros(length(t)),[:W])
+        values(σ)[lrows] .= 1.0
 
         # Initialize model parameters
-        mp = TimeArray(t,zeros(length(t),length(param_names)),param_names)
+        p = TimeArray(t,zeros(length(t),length(param_names)),param_names)
         if model_params isa Dict
             for (k,v) in enumerate(param_names)
                 haskey(model_params,v) || error("model_params does not have key $v")
-                values(mp)[:,k] .= model_params[v]
+                values(p)[:,k] .= model_params[v]
             end
         else
             overlap = intersect(t,timestamp(model_params))
@@ -80,13 +81,69 @@ struct DA{T<:Real,D<:TimeType}
             rrows = indexin(overlap,timestamp(model_params))
             for (k,v) in enumerate(param_names)
                 in(v,colnames(model_params)) || error("model_params does not have column $v")
-                values(mp)[lrows,k] = values(model_params)[rrows,indexin([v],param_names)]
+                values(p)[lrows,k] = values(model_params)[rrows,indexin([v],param_names)]
             end
         end
 
-        new{Float64,D}(ux,datamap,W,u,mp)
+        # Initialize baseline data array
+        u = forward(p,u₀)
+
+        new{Float64,D}(uₓ,C,σ,p,u)
     end
 end
+
+
+
+mutable struct DA{T<:Real,D<:TimeType}
+    data::TimeArray{T,2,D}
+    C::Matrix{T}
+    σ::TimeArray{T,1,D}
+    u::TimeArray{T,2,D}
+    v::TimeArray{T,2,D}
+    p::TimeArray{T,2,D}
+    δp::TimeArray{T,2,D}
+    g::TimeArray{T,2,D}
+    J::T
+
+    function DA(
+                data::TimeArray{<:Real,2,D},
+                u₀::Vector{<:Real},
+                p::Union{Dict{Symbol,<:Real},TimeArray{<:Real,2,D}};
+                C=missing::Union{Missing,Matrix{<:Real}},
+                start=timestamp(data)[1]::D,
+                stop=start+Day(30)::Period,
+                step=Day(1)::Period
+                ) where {D<:TimeType}
+
+        new{Float64,D}(data,datamap,W,u,p)
+    end
+end
+
+
+
+function DA(base::Baseline)
+    v = backward(base)
+    δp= ∂J∂α(base,v)
+    J = residual(base)
+    new{Float64,D}(base.data,base.C,base.σ,base.u,v,base.p,δp,J)
+end
+
+function DA(da::DA,α::Float64)
+    DA(da,-α*da.δp)
+end
+
+function DA(da::DA,δp::Array{Float64,2})
+    p=da.p + δp
+    u₀=da.u[1,:]
+    u=forward(p,u₀)
+    base=Baseline(da.data,da.C,da.σ,u,p)
+    return da′=DA(base)
+end
+
+
+
+
+
 
 reconstruct_data(da::DA) =
     TimeArray(timestamp(da.data), values(da.result)*da.datamap', colnames(da.data))
@@ -200,27 +257,99 @@ function dfda(u::AbstractArray{Float64,2})
     return f
 end
 
-function forward(da::DA,
-                 params::AbstractArray{Float64,2};
-                 maxiters=1000000::Int)
+# function forward(da::DA,
+#                  params::AbstractArray{Float64,2};
+#                  maxiters=1000000::Int)
+#     tspan = (0.0,size(da.data,1)-1.0)
+#     trange = range(tspan...,length=size(da.data,1))
+#     problem = ODEProblem(sir!,values(da.result)[1,:],tspan,params,maxiters=maxiters)
+#     solution = solve(problem)
+#     collect(solution(trange)')
+# end
+
+function forward(da::DA;maxiters=1000000::Int)
     tspan = (0.0,size(da.data,1)-1.0)
     trange = range(tspan...,length=size(da.data,1))
-    problem = ODEProblem(sir!,values(da.result)[1,:],tspan,params,maxiters=maxiters)
+    u0 = values(da.result)[1,:]
+    problem = ODEProblem(sir!,u0,tspan,da,maxiters=maxiters)
     solution = solve(problem)
     collect(solution(trange)')
 end
 
-function forward!(da::DA;maxiters=1000000::Int)
-    values(da.result)[:,:] = forward(da,values(da.model_params),maxiters=maxiters)
+function forward(p,u₀)
+    tspan = (0.0,size(p,1)-1.0)
+    trange = range(tspan...,length=size(p,1))
+    problem = ODEProblem(sir!,u₀,tspan,p,maxiters=maxiters)
+    solution = solve(problem)
+    collect(solution(trange)')
 end
+
+
+function forward!(da::DA;maxiters=1000000::Int)
+    values(da.result) = forward(da,maxiters=maxiters)
+end
+
+# function forward!(da::DA;maxiters=1000000::Int)
+#     values(da.result)[:,:] = forward(da,values(da.model_params),maxiters=maxiters)
+# end
 
 function backward(da::DA;maxiters=1000000::Int)
     tspan = (size(da.result,1)-1.0,0.0)
     trange = range(tspan...,length=size(da.result,1))
-    v0=zeros(size(da.result,2))
-    adj=ODEProblem(sir_adj!,v0,tspan,da,maxiters=maxiters)
-    adj_sol=solve(adj)
+    v0 = values(da.adjoint)[1,:]
+    adj = ODEProblem(sir_adj!,v0,tspan,da,maxiters=maxiters)
+    adj_sol = solve(adj)
     collect(adj_sol(reverse(trange))')
+end
+
+function backward(;maxiters=1000000::Int)
+    tspan = (size(u,1)-1.0,0.0)
+    trange = range(tspan...,length=size(da.result,1))
+    v₀ = zeros(size(u,2))
+    adj = ODEProblem(sir_adj!,v₀,tspan,base,maxiters=maxiters)
+    adj_sol = solve(adj)
+    collect(adj_sol(reverse(trange))')
+end
+
+function backward!(da::DA;maxiters=1000000::Int)
+    values(da.adjoint) = backward(da,maxiters=maxiters)
+end
+
+function ∂J∂α(base,V)
+    u=values(base.u)
+    v=values(V)
+    p=values(base.p)
+
+    f=dfda(u)
+    δp=zeros(size(p))
+    for i=1:size(u,2)
+        δp = δp + v[:,i] .* f[:,i,:]
+    end
+    TimeArray(timestamp(base.p),δp,colnames(base.p))
+end
+
+function residual(base)
+    data = values(base.data)
+    u = values(base.u)
+    σ = values(base.σ)
+    C = base.C
+    J = norm( (u*C' - data) .* σ )
+end
+
+import Base.+
+function +(da₀::DA,δp)
+    da = deepcopy(da₀)
+    da.p = da.p .+ δp
+    forward!(da)
+    backward!(da)
+    ∂J∂α!(da)
+    residual!(da)
+    da
+end
+
+function update(da₀::DA,α::Float64)
+    δp = values(da.δp)
+    da = da₀ + (-α*δp)
 end
 
 function update(u,v,α,p)
@@ -312,4 +441,44 @@ function linesearch!(da::DA,
     end
     values(da.model_params)[:,:] = p₁
     success,J₁,α₁
+end
+
+
+
+function diis(da::DA,
+               α=1.0e-12::Float64,
+               maxiters=10::Int,
+               method="bisection",
+               norm=LinearAlgebra.norm::Function)
+    p₀ = values(da.model_params)
+    ntParam,nParam=size(p)
+    ntEqn,nEqn=size(values(da.data))
+    δp=zeros(ntParam,nParam,maxiters)
+    da=DA(da,δp[:,:,i])
+    q=u₁*da.datamap'
+    e=zeros(ntEqn,  nEqn,  maxiters)
+    e[:,:,1]=(q-values(da.data)).*values(da.window)
+    for i =2:maxiters
+        u = forward(da,p₀)
+        v = backward(da);
+        δp[:,:,i]=gradient(u,v,δp[:,:,i-1])
+        da.model_params=p₀-α*δp[:,:,i]
+        u₁=forward(da,p₀-α*δp[:,:,i])
+        q₁=u₁*da.datamap'
+        e[:,:,i]=da.g
+    end
+    B=zeros(maxiters+1,maxiters+1)
+    B[end,1:maxiters]=ones(maxiters)
+    B[1:maxiters,end]=ones(maxiters)
+    x=[zeros(maxiters); 1]
+    for i=1:maxiters
+        for j=1:maxiters
+            B[i,j]=dot(e[:,:,j],e[:,:,i])
+        end
+    end
+    c=B\x
+    P=reshape(δp,ntParam*nParam,maxiters)
+    δp′=reshape(P*c,ntParam,nParam)
+    da.model_params=p₀-α*δp′
+    return da
 end
