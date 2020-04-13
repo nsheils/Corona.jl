@@ -6,15 +6,15 @@ using Formatting
 using june
 
 ### Parameters
-maxiters     = 10000000;
+maxiters     = 100;
 tolerance    = 0.001;
-filterfreq   = 10;
-screenfreq   = 100;
+filterfreq   = 10000000;
+screenfreq   = 10;
 sponge       = 5;
-maxlineiters = 4096;
+maxlineiters = 4096
 maxlinerange = 1e-6;
-coldstart    = false;
-region       = "King";
+coldstart    = true;
+region       = "Italy";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -35,28 +35,23 @@ print("Last date : $(data.lastdate)\n\n")
 ###  Set initial state vector
 S0 = data.population;
 C0,D0 = values(data.cases[data.outbreakdate]);
-init_vals = [S0, C0, 0, D0];
+init_u = Dict(:S => S0, :I => C0, :R => 0, :D => D0);
 
 ### Set or load initial model parameters
 if coldstart
-    init_mp = Dict(:β => 1//4, :γ => 1//7, :δ => 0);
+    init_p = Dict(:β => 1//4, :γ => 1//7, :δ => 0)
 else
-    init_mp = Corona.load_model_params(dataconfig,region);
-end
+    init_p = Corona.load_model_params(dataconfig,region)
+end;
 
 ### Initialize data assimilation
-bl = Corona.Baseline(data.cases, init_vals,
-               init_mp, datamap = data.map,
-               start = data.outbreakdate,
-               stop = timestamp(data.cases)[end] + Day(sponge)
-              );
-
-da=DA()
-
+base = Corona.Baseline(data.cases, init_u, init_p,
+                C = data.map, start = data.outbreakdate,
+                stop = timestamp(data.cases)[end] + Day(sponge));
 
 ### Initialize residual
 J = Array{Float64,1}()
-J0 = da.J
+J0 = norm(values(base.data));
 α=maxlinerange/J0;
 
 ### Print some other information
@@ -75,33 +70,22 @@ printfmt("└ maximum number of iterations is {}\n\n",maxiters)
 # error()
 
 ### Exectue data assimilation
-Corona.forward!(da);
+da = Corona.DA(base);
+
+### Exectue data assimilation
 try
     for i=1:maxiters
-        α=1e-12
-        da=DA(da,α)
+        global da
 
-        =linesearch(da,αₘ)
-
-
-    end
-
-
-
-
-
-
-
-        v = Corona.backward(da);
-        success,Je,_ = Corona.linesearch!(da,v,α=α,method="bisection",maxiters=maxlineiters);
+        α,success = Corona.linesearch(da,method="bisection")
         if !success
-            success,Je,_ = Corona.linesearch!(da,v,α=α,method="brute_force",maxiters=maxlineiters);
+            α,success = Corona.linesearch(da,method="brute_force")
         end
-        Corona.propagate_solution!(da);
-        Corona.forward!(da);
+        da = Corona.DA(da,α)
+        Corona.extend_solution!(da)
 
         if mod(i,screenfreq) == 0
-            global J = [J; Je/J0]
+            global J = [J; da.J/J0]
             if length(J) == argmin(J)
                 color=:green
             else
@@ -113,7 +97,7 @@ try
         if mod(i,filterfreq) == 0
             values(da.model_params)[:,:] = ∂⁰(values(da.model_params))
         end
-        if Je < J0*tolerance
+        if da.J < J0*tolerance
             printstyled("\nSTOP: ";bold=true,color=:green)
             printstyled("Residual within prescribed tolerance\n";color=:green)
             break

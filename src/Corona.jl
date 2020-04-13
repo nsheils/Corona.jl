@@ -3,6 +3,7 @@ module Corona
 
 using Dates
 using TimeSeries
+using DataStructures
 
 include("utils.jl")
 include("DA.jl")
