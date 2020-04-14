@@ -151,7 +151,7 @@ mutable struct DA{T<:Real,D<:TimeType}
     end
 
     function DA(da::DA, δp::Array{<:Real,2})
-        p = da.p .+ δp
+        p = max.(da.p .+ δp, 0.0)
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
         u = forward(p,u₀)
         base = Baseline(da.data,da.C,da.σ,u,p)
@@ -164,7 +164,7 @@ function baseline(da::DA)
 end
 
 function extend_solution!(da::DA)
-    idxs = meta(da.data)["last_day_idxs"]
+    idxs = meta(da.data)["last_day_idxs"]-1
     values(da.p)[idxs+1:end,:] .= values(da.p)[idxs:idxs,:]
 end
 
@@ -468,8 +468,9 @@ function heavy_ball(da::DA, α::Float64, β::Float64;
     daᵢ = deepcopy(da)
     J₀ = norm(values(da.data) .* values(da.σ))
     J = Vector{Float64}()
+    Jᵢ = Vector{Float64}(undef,screenfreq)
     δp = values(daᵢ.δp)
-    if norm(δp) < ϵ
+    if norm(δp) < 1e-3
         return da,true
     end
     #αₘ,_ = Corona.linesearch(daᵢ; α=α, maxiters=100, method="brute_force")
@@ -478,14 +479,17 @@ function heavy_ball(da::DA, α::Float64, β::Float64;
     for i=1:maxiters
         daᵢ = DA(daᵢ,Δp)
         δp = values(daᵢ.δp)
-        if norm(δp)/norm(values(da.p)) < ϵ
+        if norm(δp)/norm(values(da.p)) < 1e-3
             return daᵢ,true
         end
-        if daᵢ.J/J₀ < 0.008
+        Jᵣ = daᵢ.J/J₀
+        Jᵢ[mod(i,screenfreq)+1] = Jᵣ
+        if Jᵣ < ϵ
             return daᵢ,true
         end
+        extend_solution!(daᵢ)
         if mod(i,screenfreq) == 0
-            push!(J,daᵢ.J/J₀)
+            push!(J,minimum(Jᵢ))
             if length(J) == argmin(J)
                 color=:green
             else

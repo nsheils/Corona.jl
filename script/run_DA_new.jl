@@ -6,15 +6,15 @@ using Formatting
 using june
 
 ### Parameters
-maxiters     = 1;
+maxiters     = 100000;
 tolerance    = 0.001;
 filterfreq   = 10000000;
 screenfreq   = 1;
-sponge       = 5;
-maxlineiters = 4096
-maxlinerange = 1e-6;
-coldstart    = true;
-region       = "Italy";
+sponge       = 30;
+α            = 1e-15;
+β            = 0.99;
+coldstart    = false;
+region       = "New York";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -49,11 +49,6 @@ base = Corona.Baseline(data.cases, init_u, init_p,
                 C = data.map, start = data.outbreakdate,
                 stop = timestamp(data.cases)[end] + Day(sponge));
 
-### Initialize residual
-J = Array{Float64,1}()
-J0 = norm(values(base.data));
-α=maxlinerange/J0;
-
 ### Print some other information
 if coldstart
     printstyled("Cold Start";color=:red)
@@ -74,25 +69,31 @@ da = Corona.DA(base);
 
 ###
 #J = Corona.linesearch(da; α=1.0e-12,maxiters=2^16,method="plot")
-da,success = Corona.heavy_ball(da,α,0.99,maxiters=1000000);
-
+try
+    global da
+    da,success = Corona.heavy_ball(da,α,β,maxiters=maxiters,ϵ=tolerance);
+catch e
+    isa(e, InterruptException) || rethrow(e);
+    printstyled("\nSTOP: ";bold=true)
+    print("Keyboard interrupt\n")
+end
 ###
 #B,c,δp = Corona.diis(da)
-for i=1:100
-    global da, success
-    da,success = Corona.heavy_ball(da,α,0.0,maxiters=10);
-    #da = Corona.DA(da,αₘ)
-    if mod(i,screenfreq) == 0
-        global J = [J; da.J/J0]
-        if length(J) == argmin(J)
-            color=:green
-        else
-            color=:red
-        end
-        print(i," ")
-        printstyled(format("{:.8f}",J[end]),"\n";color=color)
-    end
-end
+# for i=1:100
+#     global da, success
+#     da,success = Corona.heavy_ball(da,α,0.0,maxiters=10);
+#     #da = Corona.DA(da,αₘ)
+#     if mod(i,screenfreq) == 0
+#         global J = [J; da.J/J0]
+#         if length(J) == argmin(J)
+#             color=:green
+#         else
+#             color=:red
+#         end
+#         print(i," ")
+#         printstyled(format("{:.8f}",J[end]),"\n";color=color)
+#     end
+# end
 ### Exectue data assimilation
 # try
 #     for i=1:maxiters
@@ -129,5 +130,5 @@ end
 #     print("Keyboard interrupt\n")
 # end
 #
-# ### Save data assimilation result
-# Corona.save(dataconfig,region,da,interactive=true)
+### Save data assimilation result
+Corona.save(dataconfig,region,da,interactive=true)
