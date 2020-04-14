@@ -73,12 +73,26 @@ printfmt("└ maximum number of iterations is {}\n\n",maxiters)
 da = Corona.DA(base);
 
 ###
-J = Corona.linesearch(da; α=1.0e-12,maxiters=2^16,method="plot")
+#J = Corona.linesearch(da; α=1.0e-12,maxiters=2^16,method="plot")
+da,success = Corona.heavy_ball(da,α,0.99,maxiters=1000000);
 
 ###
 #B,c,δp = Corona.diis(da)
-
-
+for i=1:100
+    global da, success
+    da,success = Corona.heavy_ball(da,α,0.0,maxiters=10);
+    #da = Corona.DA(da,αₘ)
+    if mod(i,screenfreq) == 0
+        global J = [J; da.J/J0]
+        if length(J) == argmin(J)
+            color=:green
+        else
+            color=:red
+        end
+        print(i," ")
+        printstyled(format("{:.8f}",J[end]),"\n";color=color)
+    end
+end
 ### Exectue data assimilation
 # try
 #     for i=1:maxiters

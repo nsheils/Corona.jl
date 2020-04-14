@@ -1,5 +1,6 @@
 using DifferentialEquations
 using LinearAlgebra
+using Formatting
 
 ###### global constants ###########
 const varnames = [:S,:I,:R,:D]
@@ -146,7 +147,11 @@ mutable struct DA{T<:Real,D<:TimeType}
     end
 
     function DA(da::DA, δp::TimeArray{<:Real,2})
-        p = da.p .+ values(δp)
+        DA(da,values(δp))
+    end
+
+    function DA(da::DA, δp::Array{<:Real,2})
+        p = da.p .+ δp
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
         u = forward(p,u₀)
         base = Baseline(da.data,da.C,da.σ,u,p)
@@ -289,7 +294,7 @@ function gradient(base::Baseline, v::TimeArray)
     for i=1:size(u,2)
         δp = δp + values(v)[:,i] .* f[:,i,:]
     end
-    TimeArray(timestamp(base.p),δp./norm(δp),colnames(base.p))
+    TimeArray(timestamp(base.p),δp,colnames(base.p))
 end
 
 function forcing(base::Baseline)
@@ -456,6 +461,44 @@ end
 # end
 #
 #
+
+function heavy_ball(da::DA, α::Float64, β::Float64;
+                    ϵ=1e-3::Float64,maxiters=1000::Int,
+                    screenfreq=10::Int)
+    daᵢ = deepcopy(da)
+    J₀ = norm(values(da.data) .* values(da.σ))
+    J = Vector{Float64}()
+    δp = values(daᵢ.δp)
+    if norm(δp) < ϵ
+        return da,true
+    end
+    #αₘ,_ = Corona.linesearch(daᵢ; α=α, maxiters=100, method="brute_force")
+    αₘ = α
+    Δp = -αₘ.*δp
+    for i=1:maxiters
+        daᵢ = DA(daᵢ,Δp)
+        δp = values(daᵢ.δp)
+        if norm(δp)/norm(values(da.p)) < ϵ
+            return daᵢ,true
+        end
+        if daᵢ.J/J₀ < 0.008
+            return daᵢ,true
+        end
+        if mod(i,screenfreq) == 0
+            push!(J,daᵢ.J/J₀)
+            if length(J) == argmin(J)
+                color=:green
+            else
+                color=:red
+            end
+            print(i," ")
+            printstyled(format("{:.8f}",J[end]),"\n";color=color)
+        end
+        #αₘ,_ = Corona.linesearch(daᵢ; α=α, maxiters=100, method="brute_force")
+        Δp = -αₘ*δp + β*Δp
+    end
+    return daᵢ,false
+end
 
 function diis(da::DA,
                α=1.0e-12::Float64,
