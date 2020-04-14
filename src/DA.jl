@@ -140,18 +140,18 @@ mutable struct DA{T<:Real,D<:TimeType}
         J = norm(values(g))
         new{T,D}(base.data,base.C,base.σ,base.u,v,base.p,δp,g,J)
     end
-end
 
-function DA(da::DA, α::Real)
-    DA(da,-α.*da.δp)
-end
+    function DA(da::DA, α::Real)
+        DA(da,-α.*da.δp)
+    end
 
-function DA(da::DA, δp::TimeArray{<:Real,2})
-    p = da.p .+ values(δp)
-    u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
-    u = forward(p,u₀)
-    base = Baseline(da.data,da.C,da.σ,u,p)
-    DA(base)
+    function DA(da::DA, δp::TimeArray{<:Real,2})
+        p = da.p .+ values(δp)
+        u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
+        u = forward(p,u₀)
+        base = Baseline(da.data,da.C,da.σ,u,p)
+        DA(base)
+    end
 end
 
 function baseline(da::DA)
@@ -289,7 +289,7 @@ function gradient(base::Baseline, v::TimeArray)
     for i=1:size(u,2)
         δp = δp + values(v)[:,i] .* f[:,i,:]
     end
-    TimeArray(timestamp(base.p),δp,colnames(base.p))
+    TimeArray(timestamp(base.p),δp./norm(δp),colnames(base.p))
 end
 
 function forcing(base::Baseline)
@@ -471,7 +471,7 @@ function diis(da::DA,
     for i=1:nspace
         αᵢ,_ = linesearch(da′)
         da′ = DA(da′,αᵢ)
-        Δp[:,:,i] = value(da′.p-p₀)
+        Δp[:,:,i] = values(da′.p .- p₀)
         e[:,:,i] = values(da′.g)
     end
     B=zeros(nspace+1,nspace+1)
@@ -485,6 +485,7 @@ function diis(da::DA,
     end
     c=B\x
     P=reshape(Δp,ntParam*nParam,nspace)
-    δp=TimeArray(timestamp(da.p),reshape(P*c,ntParam,nParam),colnames(da.p))
-    DA(da,δp)
+    δp=reshape(P*c[1:end-1],ntParam,nParam)
+    DA(da,TimeArray(timestamp(da.p),δp,colnames(da.p)))
+    B,c,δp
 end

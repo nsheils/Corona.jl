@@ -6,10 +6,10 @@ using Formatting
 using june
 
 ### Parameters
-maxiters     = 100;
+maxiters     = 1;
 tolerance    = 0.001;
 filterfreq   = 10000000;
-screenfreq   = 10;
+screenfreq   = 1;
 sponge       = 5;
 maxlineiters = 4096
 maxlinerange = 1e-6;
@@ -72,45 +72,48 @@ printfmt("└ maximum number of iterations is {}\n\n",maxiters)
 ### Exectue data assimilation
 da = Corona.DA(base);
 
+###
+J = Corona.linesearch(da; α=1.0e-12,maxiters=2^16,method="plot")
+
+###
+#B,c,δp = Corona.diis(da)
+
+
 ### Exectue data assimilation
-try
-    for i=1:maxiters
-        global da
-
-        α,success = Corona.linesearch(da,method="bisection")
-        if !success
-            α,success = Corona.linesearch(da,method="brute_force")
-        end
-        da = Corona.DA(da,α)
-        Corona.extend_solution!(da)
-
-        if mod(i,screenfreq) == 0
-            global J = [J; da.J/J0]
-            if length(J) == argmin(J)
-                color=:green
-            else
-                color=:red
-            end
-            print(i," ")
-            printstyled(format("{:.8f}",J[end]),"\n";color=color)
-        end
-        if mod(i,filterfreq) == 0
-            values(da.model_params)[:,:] = ∂⁰(values(da.model_params))
-        end
-        if da.J < J0*tolerance
-            printstyled("\nSTOP: ";bold=true,color=:green)
-            printstyled("Residual within prescribed tolerance\n";color=:green)
-            break
-        elseif i == maxiters
-            printstyled("\nSTOP: ";bold=true,color=:yellow)
-            printstyled("Maximum number of iterations reached\n";color=:yellow)
-        end
-    end
-catch e
-    isa(e, InterruptException) || rethrow(e);
-    printstyled("\nSTOP: ";bold=true)
-    print("Keyboard interrupt\n")
-end
-
-### Save data assimilation result
-Corona.save(dataconfig,region,da,interactive=true)
+# try
+#     for i=1:maxiters
+#         global da
+#
+#         da = Corona.diis(da)
+#         Corona.extend_solution!(da)
+#
+#         if mod(i,screenfreq) == 0
+#             global J = [J; da.J/J0]
+#             if length(J) == argmin(J)
+#                 color=:green
+#             else
+#                 color=:red
+#             end
+#             print(i," ")
+#             printstyled(format("{:.8f}",J[end]),"\n";color=color)
+#         end
+#         if mod(i,filterfreq) == 0
+#             values(da.model_params)[:,:] = ∂⁰(values(da.model_params))
+#         end
+#         if da.J < J0*tolerance
+#             printstyled("\nSTOP: ";bold=true,color=:green)
+#             printstyled("Residual within prescribed tolerance\n";color=:green)
+#             break
+#         elseif i == maxiters
+#             printstyled("\nSTOP: ";bold=true,color=:yellow)
+#             printstyled("Maximum number of iterations reached\n";color=:yellow)
+#         end
+#     end
+# catch e
+#     isa(e, InterruptException) || rethrow(e);
+#     printstyled("\nSTOP: ";bold=true)
+#     print("Keyboard interrupt\n")
+# end
+#
+# ### Save data assimilation result
+# Corona.save(dataconfig,region,da,interactive=true)
