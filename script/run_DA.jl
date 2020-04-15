@@ -68,29 +68,34 @@ da_opt = da_run;
 J = Vector{Union{Missing,Float64}}(missing,maxiters);
 J_ini = norm(values(da_run.data).*values(da_run.σ));
 J_min = Inf;
+J_argmin = 1;
 
 ### Optimise data assimilation
 try
     for i=1:maxiters
-        global da_run, da_opt, J_min
+        global da_run, da_opt, J_min, J_argmin, convegence
 
         da_run = Corona.apply!(opt,da_run)
         J[i] = Corona.residual(da_run)/J_ini
         Corona.extend_solution!(da_run)
 
         if J[i] < J_min
+            convegence = (log10(J_min) - log10(J[i])) / (log10(i) - log10(J_argmin))
             J_min = J[i]
+            J_argmin = i
             da_opt = da_run
         end
         if mod(i,screenfreq) == 0
             iscreen = i-screenfreq+1:i
             if argmin(skipmissing(J)) in iscreen
                 color=:green
+                n_old=i;
             else
                 color=:red
             end
             print(i," ")
-            printstyled(format("{:.8f}",minimum(J[iscreen])),"\n";color=color)
+            printstyled(format("{:.8f}",minimum(J[iscreen]));color=color)
+            printstyled(format(" {:.8f}\n",convegence);color=:blue)
         end
         if J[i] < tolerance
             printstyled("\nSTOP: ";bold=true,color=:green)
