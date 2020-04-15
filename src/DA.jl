@@ -1,6 +1,9 @@
 using DifferentialEquations
 using LinearAlgebra
+using Flux
 using Formatting
+
+import Flux.Optimise: apply!
 
 ###### global constants ###########
 const varnames = [:S,:I,:R,:D]
@@ -132,18 +135,16 @@ mutable struct DA{T<:Real,D<:TimeType}
     p::TimeArray{T,2,D}
     δp::TimeArray{T,2,D}
     g::TimeArray{T,2,D}
-    J::T
 
     function DA(base::Baseline{T,D}) where {T,D}
         v = backward(base)
         δp = gradient(base,v)
         g = forcing(base)
-        J = norm(values(g))
-        new{T,D}(base.data,base.C,base.σ,base.u,v,base.p,δp,g,J)
+        new{T,D}(base.data,base.C,base.σ,base.u,v,base.p,δp,g)
     end
 
     function DA(da::DA, α::Real)
-        DA(da,-α.*da.δp)
+        DA(da,α.*da.δp)
     end
 
     function DA(da::DA, δp::TimeArray{<:Real,2})
@@ -151,7 +152,7 @@ mutable struct DA{T<:Real,D<:TimeType}
     end
 
     function DA(da::DA, δp::Array{<:Real,2})
-        p = max.(da.p .+ δp, 0.0)
+        p = max.(da.p .- δp, 0.0)
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
         u = forward(p,u₀)
         base = Baseline(da.data,da.C,da.σ,u,p)
@@ -161,6 +162,14 @@ end
 
 function baseline(da::DA)
     Baseline(da.data,da.C,da.σ,da.u,da.p)
+end
+
+function residual(da::DA, relative=false::Bool, norm=LinearAlgebra.norm::Function)
+    J = norm(values(da.g))
+    if relative
+        J = J/norm(values(da.data).*values(da.σ))
+    end
+    J
 end
 
 function extend_solution!(da::DA)
@@ -306,233 +315,7 @@ function forcing(base::Baseline)
     TimeArray(timestamp(base.data),g,colnames(base.data))
 end
 
-function linesearch(da::DA; α=1.0e-12::Float64,
-                    maxiters=2048::Int, method="bisection",
-                    norm=LinearAlgebra.norm::Function)
-    p = values(da.p)
-    u = values(da.u)
-    v = values(da.v)
-    function brute_force(αₐ,αₑ,nΔ=itMax)
-        J₀=da.J
-        Δα=(αₑ-αₐ)
-        Δ=αₐ .+ Δα*sort(rand(nΔ+1))
-        J=zeros(nΔ+1,2)
-        for  i=1:nΔ+1
-            J[i,:]=[Δ[i] DA(da,Δ[i]).J]
-        end
-        αₘ=J[argmin(J[:,2]),1]
-        J₁=minimum(J[:,2])
-        return αₘ,true
-    end
-    function bisection(αₐ=0.0,αₑ=α,itMax=itMax)
-        i = 1
-        ϵ = 1/3
-        J₀= da.J
-        # Jₑ=DA(da,αₑ).J
-        # if Jₑ<J₀
-        #     return αₑ,true
-        # end
-        Jₐ=J₀
-        while i < itMax
-            Δα=(αₑ-αₐ)
-            αₘ=αₐ+ rand()*Δα
-            Jₘ=DA(da,αₘ).J
-            if (Jₘ<J₀) && (Δα/α<ϵ)
-                return αₘ,true
-            end
-            if Jₘ < Jₐ
-                αₐ=αₘ
-                Jₐ=Jₘ
-            else
-                αₑ=αₘ
-                Jₑ=Jₘ
-            end
-            i=i+1
-        end
-        return 0.0,false
-    end
-    ###########################
-    # calculation start
-    if method=="bisection"
-        return bisection(0.0,α,maxiters)
-    elseif method=="brute_force"
-        return brute_force(0.0,α,maxiters)
-    elseif method=="plot"
-        J=zeros(maxiters,2)
-        αrange = range(0,α,length=maxiters)
-        for (i,αᵢ) in enumerate(αrange)
-            J[i,:] = [αᵢ DA(da,αᵢ).J]
-        end
-        return J
-    else
-        throw(ArgumentError("method `$method' unknown"))
-    end
-end
-
-function update(u,v,α,p)
-    if α > 0
-        f=dfda(u)
-        δp=zeros(size(p))
-        for i=1:4
-            δp = δp + v[:,i] .* f[:,i,:]
-        end
-        max.(p-α*δp,0.0)
-    else
-        p
-    end
-end
-
-# function linesearch!(da::DA,
-#                      v::AbstractArray{Float64};
-#                      α=1.0e-12::Float64,
-#                      maxiters=2048::Int,
-#                      method="bisection",
-#                      norm=LinearAlgebra.norm::Function)
-#     p = values(da.p)
-#     u = forward(da,p)
-#     function probe(α)
-#         p₁=update(u,v,α,p)
-#         u₁=forward(da,p₁)
-#         q₁=u₁*da.datamap'
-#         norm((q₁-values(da.data)).*values(da.window))
-#     end
-#     function brute_force(αₐ,αₑ,nΔ=itMax)
-#         J₀=probe(0.0)
-#         Δα=(αₑ-αₐ)
-#         Δ=αₐ .+ Δα*sort(rand(nΔ+1))
-#         J=zeros(nΔ+1,2)
-#         for  i=1:nΔ+1
-#             J[i,:]=[Δ[i] probe(Δ[i])]
-#         end
-#         αₘ=J[argmin(J[:,2]),1]
-#         J₁=minimum(J[:,2])
-#         p₁=update(u,v,αₘ,p)
-#         return p₁,true,J₁,αₘ
-#     end
-#     function bisection(αₐ=0.0,αₑ=α,itMax=itMax)
-#         i = 1
-#         ϵ = 1/3
-#         J₀=probe(0.0)
-#         Jₑ=probe(αₑ)
-#         if Jₑ<J₀
-#             p₁=update(u,v,αₑ,p)
-#             return p₁,true,Jₑ,αₑ
-#         end
-#         Jₐ=J₀
-#         while i < itMax
-#             #        αₘ=(αₐ+αₑ)/2
-#             Δα=(αₑ-αₐ)
-#             αₘ=αₐ+ rand()*Δα
-#             Jₘ=probe(αₘ)
-#             if (Jₘ<J₀) && (Δα/α<ϵ)
-#                 p₁=update(u,v,αₘ,p)
-#                 return p₁,true,Jₘ,αₘ
-#             end
-#             if Jₘ < Jₐ
-#                 αₐ=αₘ
-#                 Jₐ=Jₘ
-#             else
-#                 αₑ=αₘ
-#                 Jₑ=Jₘ
-#             end
-#             i=i+1
-#         end
-#         #    println("$i failed")
-#         return p,false,J₀,0.0
-#     end
-#     ###########################
-#     # calculation start
-#     if method=="bisection"
-#         p₁,success,J₁,α₁ = bisection(0.0,α,maxiters)
-#     elseif method=="brute_force"
-#         p₁,success,J₁,α₁ = brute_force(0.0,α,maxiters)
-#     elseif method=="plot"
-#         J=zeros(maxiters,2)
-#         αrange = range(0,α,length=maxiters)
-#         for (i,αᵢ) in enumerate(αrange)
-#             J[i,:] = [αᵢ probe(αᵢ)]
-#         end
-#         return J
-#     else
-#         throw(ArgumentError("method `$method' unknown"))
-#     end
-#     values(da.p)[:,:] = p₁
-#     success,J₁,α₁
-# end
-#
-#
-
-function heavy_ball(da::DA, α::Float64, β::Float64;
-                    ϵ=1e-3::Float64,maxiters=1000::Int,
-                    screenfreq=10::Int)
-    daᵢ = deepcopy(da)
-    J₀ = norm(values(da.data) .* values(da.σ))
-    J = Vector{Float64}()
-    Jᵢ = Vector{Float64}(undef,screenfreq)
-    δp = values(daᵢ.δp)
-    if norm(δp) < 1e-3
-        return da,true
-    end
-    #αₘ,_ = Corona.linesearch(daᵢ; α=α, maxiters=100, method="brute_force")
-    αₘ = α
-    Δp = -αₘ.*δp
-    for i=1:maxiters
-        daᵢ = DA(daᵢ,Δp)
-        δp = values(daᵢ.δp)
-        if norm(δp)/norm(values(da.p)) < 1e-3
-            return daᵢ,true
-        end
-        Jᵣ = daᵢ.J/J₀
-        Jᵢ[mod(i,screenfreq)+1] = Jᵣ
-        if Jᵣ < ϵ
-            return daᵢ,true
-        end
-        extend_solution!(daᵢ)
-        if mod(i,screenfreq) == 0
-            push!(J,minimum(Jᵢ))
-            if length(J) == argmin(J)
-                color=:green
-            else
-                color=:red
-            end
-            print(i," ")
-            printstyled(format("{:.8f}",J[end]),"\n";color=color)
-        end
-        #αₘ,_ = Corona.linesearch(daᵢ; α=α, maxiters=100, method="brute_force")
-        Δp = -αₘ*δp + β*Δp
-    end
-    return daᵢ,false
-end
-
-function diis(da::DA,
-               α=1.0e-12::Float64,
-               nspace=10::Int,
-               method="bisection",
-               norm=LinearAlgebra.norm::Function)
-    ntParam,nParam=size(da.p)
-    ntEqn,nEqn=size(da.data)
-    Δp=zeros(ntParam,nParam,nspace)
-    e=zeros(ntEqn,nEqn,nspace)
-    p₀=da.p
-    da′=deepcopy(da)
-    for i=1:nspace
-        αᵢ,_ = linesearch(da′)
-        da′ = DA(da′,αᵢ)
-        Δp[:,:,i] = values(da′.p .- p₀)
-        e[:,:,i] = values(da′.g)
-    end
-    B=zeros(nspace+1,nspace+1)
-    B[end,1:nspace]=ones(nspace)
-    B[1:nspace,end]=ones(nspace)
-    x=[zeros(nspace); 1]
-    for i=1:nspace
-        for j=1:nspace
-            B[i,j]=dot(e[:,:,j],e[:,:,i])
-        end
-    end
-    c=B\x
-    P=reshape(Δp,ntParam*nParam,nspace)
-    δp=reshape(P*c[1:end-1],ntParam,nParam)
-    DA(da,TimeArray(timestamp(da.p),δp,colnames(da.p)))
-    B,c,δp
+function apply!(opt, da::DA)
+    Δp = apply!(opt,values(da.p),values(da.δp))
+    DA(da,Δp)
 end

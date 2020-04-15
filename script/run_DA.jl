@@ -1,20 +1,18 @@
 using Corona
+using Flux
 using Dates
 using LinearAlgebra
 using TimeSeries
 using Formatting
-using june
 
 ### Parameters
-maxiters     = 10000000;
+maxiters     = 1000000;
 tolerance    = 0.001;
-filterfreq   = 10;
 screenfreq   = 100;
-sponge       = 5;
-maxlineiters = 4096;
-maxlinerange = 1e-6;
-coldstart    = false;
-region       = "King";
+sponge       = 30;
+opt          = Momentum(1e-13, 0.99);
+coldstart    = true;
+region       = "New York";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -33,30 +31,21 @@ print("Outbreakdate : $(data.outbreakdate)\n")
 print("Last date : $(data.lastdate)\n\n")
 
 ###  Set initial state vector
-S0 = data.population;
-C0,D0 = values(data.cases[data.outbreakdate]);
-init_vals = [S0, C0, 0, D0];
+S₀ = data.population;
+C₀,D₀ = values(data.cases[data.outbreakdate]);
+init_u = Dict(:S => S₀, :I => C₀, :R => 0, :D => D₀);
 
 ### Set or load initial model parameters
 if coldstart
-    init_mp = Dict(:β => 1//4, :γ => 1//7, :δ => 0);
+    init_p = Dict(:β => 1//4, :γ => 1//7, :δ => 0)
 else
-    init_mp = Corona.load_model_params(dataconfig,region);
-end
+    init_p = Corona.load_model_params(dataconfig,region)
+end;
 
 ### Initialize data assimilation
-da = Corona.DA(data.cases, init_vals,
-               init_mp, datamap = data.map,
-               start = data.outbreakdate,
-               stop = timestamp(data.cases)[end] + Day(sponge)
-              );
-
-
-### Initialize residual
-J = Array{Float64,1}()
-J0 = norm(values(da.data).*values(da.window))
-
-α=maxlinerange/J0;
+base = Corona.Baseline(data.cases, init_u, init_p,
+                C = data.map, start = data.outbreakdate,
+                stop = timestamp(data.cases)[end] + Day(sponge));
 
 ### Print some other information
 if coldstart
@@ -64,41 +53,43 @@ if coldstart
 else
     printstyled("Warm Start";color=:green)
 end
-printfmt(" with α= {:.4e} and tolerance {}\n",α,tolerance)
-printfmt("└ maximum number of iterations is {}\n\n",maxiters)
-
-## Test
-# Corona.forward!(da);
-# v = Corona.backward(da);
-# J = Corona.linesearch!(da,v,α=α,method="plot",maxiters=maxlineiters)
-# error()
+printfmt(" with tolerance {}\n",tolerance)
+printfmt("| maximum number of iterations {}\n",maxiters)
+print("└ and optimiser $opt\n\n")
 
 ### Exectue data assimilation
-Corona.forward!(da);
+da_run = Corona.DA(base);
+da_opt = da_run;
+
+### Initialize residual
+J = Vector{Union{Missing,Float64}}(missing,maxiters);
+J_ini = norm(values(da_run.data).*values(da_run.σ));
+J_min = Inf;
+
+### Optimise data assimilation
 try
     for i=1:maxiters
-        v = Corona.backward(da);
-        success,Je,_ = Corona.linesearch!(da,v,α=α,method="bisection",maxiters=maxlineiters);
-        if !success
-            success,Je,_ = Corona.linesearch!(da,v,α=α,method="brute_force",maxiters=maxlineiters);
-        end
-        Corona.propagate_solution!(da);
-        Corona.forward!(da);
+        global da_run, da_opt, J_min
 
+        da_run = Corona.apply!(opt,da_run)
+        J[i] = Corona.residual(da_run)/J_ini
+        Corona.extend_solution!(da_run)
+
+        if J[i] < J_min
+            J_min = J[i]
+            da_opt = da_run
+        end
         if mod(i,screenfreq) == 0
-            global J = [J; Je/J0]
-            if length(J) == argmin(J)
+            iscreen = i-screenfreq+1:i
+            if argmin(skipmissing(J)) in iscreen
                 color=:green
             else
                 color=:red
             end
             print(i," ")
-            printstyled(format("{:.8f}",J[end]),"\n";color=color)
+            printstyled(format("{:.8f}",minimum(J[iscreen])),"\n";color=color)
         end
-        if mod(i,filterfreq) == 0
-            values(da.model_params)[:,:] = ∂⁰(values(da.model_params))
-        end
-        if Je < J0*tolerance
+        if J[i] < tolerance
             printstyled("\nSTOP: ";bold=true,color=:green)
             printstyled("Residual within prescribed tolerance\n";color=:green)
             break
@@ -114,4 +105,4 @@ catch e
 end
 
 ### Save data assimilation result
-Corona.save(dataconfig,region,da,interactive=true)
+Corona.save(dataconfig,region,da_opt,interactive=true)

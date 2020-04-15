@@ -123,16 +123,12 @@ function save(config::DataConfig,region::AbstractString,da::DA;
     _save(filename,da)
 end
 
-function _save(filename::AbstractString,da::DA)
-    FileIO.save( filename,
-                   "data", da.data,
-                "datamap", da.datamap,
-                 "window", da.window,
-                 "result", da.result,
-           "model_params", da.model_params )
+function _save(filename::AbstractString,da::DA,J)
+    FileIO.save( filename, "da", da)
 end
 
 function load_model_params(config::DataConfig,region::AbstractString)
     filename = joinpath(config.results_path,build_filename(config,region),"da.jld2")
-    FileIO.load(filename,"model_params")
+    da = FileIO.load(filename,"da")
+    da.p
 end
