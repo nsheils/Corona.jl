@@ -123,7 +123,7 @@ function save(config::DataConfig,region::AbstractString,da::DA;
     _save(filename,da)
 end
 
-function _save(filename::AbstractString,da::DA,J)
+function _save(filename::AbstractString,da::DA)
     FileIO.save( filename, "da", da)
 end
 
