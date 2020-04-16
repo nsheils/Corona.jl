@@ -83,7 +83,7 @@ function load_data(config::DataConfig,region::AbstractString)
     path = config.rawdata_path
     loader = config.loaders[source]
     cases = _load_data(Val(Symbol(loader)),config.args_data_loader[region],
-                        joinpath(path,config.data_dirs[loader]))
+                        joinpath(path,config.data_dirs[source]))
     outbreakdate = get_outbreak_date(config,cases,loader)
     lastdate = timestamp(cases)[end]
     population = _load_population(config.args_population_loader[region],path)
@@ -123,8 +123,12 @@ function save(config::DataConfig,region::AbstractString,da::DA;
     _save(filename,da)
 end
 
-function _save(filename::AbstractString,da::DA)
-    FileIO.save( filename, "da", da)
+function _save(filename::AbstractString,da::DA,opt=missing)
+    dat = ["da", da]
+    if !ismissing(opt)
+        push!(dat, "opt", opt)
+    end
+    FileIO.save( filename, dat...)
 end
 
 function load_model_params(config::DataConfig,region::AbstractString)
