@@ -1,21 +1,16 @@
-##### Configuration file #####
-
-# results path
-dataconfig.results_path = "results"
-
-# data path
-dataconfig.rawdata_path = "raw"
+##### Data configuration file #####
 
 # source names by region
 push!(dataconfig.sources,
     "Germany" => "JHU",
-    "Bayern" => "native",
+    "Bayern" => "RKI",
     "Italy" => "JHU",
     "France" => "JHU",
     "China" => "JHU",
     "US" => "JHU",
     "King" => "JHU",
     "New York" => "JHU",
+    "United Kingdom" => "JHU",
 )
 
 # data loaders by source
@@ -24,7 +19,7 @@ push!(dataconfig.loaders,
     "RKI" => "native",
 )
 
-# data dirs by loader
+# data dirs by source
 push!(dataconfig.data_dirs,
     "JHU" => "JHU",
     "RKI" => "RKI",

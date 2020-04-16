@@ -12,3 +12,6 @@ deps/deps.jl
 # Data
 raw
 results
+
+# Paths config
+config/paths.jl

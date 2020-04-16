@@ -12,7 +12,7 @@ screenfreq   = 100;
 sponge       = 30;
 opt          = Momentum(1e-13, 0.99);
 coldstart    = true;
-region       = "New York";
+region       = "Bayern";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -21,6 +21,9 @@ print("   $region\n\n")
 ### Load configuration
 dataconfig = Corona.DataConfig();
 include("../config/data.jl");
+if isfile(joinpath(Base.@__DIR__,"../config/paths.jl"))
+    include("../config/paths.jl")
+end;
 
 ### Load data
 data = Corona.load_data(dataconfig,region);
