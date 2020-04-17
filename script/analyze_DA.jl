@@ -17,11 +17,10 @@ region = "New York";
 title = "New York City";
 
 ## Select region and paths
-filename = Corona.build_filename(dataconfig,region);
-figdir = joinpath("figs",filename);
+fname = Corona.build_fname(dataconfig,region);
+figdir = joinpath("figs",fname);
 mkpath(figdir);
-datapath = joinpath(dataconfig.results_path,filename,"da.jld2");
-
+datapath = joinpath(dataconfig.results_path,fname,"da.jld2");
 
 ## Load data
 da = load(datapath,"da");
@@ -40,6 +39,9 @@ savefig(joinpath(figdir,"da.pdf"))
 ## Plot results in log scale
 plot(da,region,yaxis=:log10,legend=:bottomright)
 title!(format(title*", J = {:.3f} %",J*100))
+
+##
+plot!(1e6 .* da.σ.S .+ 1.0,fillrange=1.0,α=0.2,color=:grey,label="control",yscale=:log10)
 
 ##
 savefig(joinpath(figdir,"da_log.pdf"))
