@@ -193,7 +193,7 @@ function residual(da::DA; relative=false::Bool, norm=LinearAlgebra.norm::Functio
 end
 
 function datanorm(da::DA; norm=LinearAlgebra.norm::Function)
-    norm(da.C'*values(da.data).*values(da.σ))
+    norm(values(da.data).*values(da.σ))
 end
 
 function extend_solution!(da::DA)
