@@ -59,11 +59,12 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 start=timestamp(data)[1]::D,
                 stop=start+Day(30)::Period,
                 step=Day(1)::Period,
+                σ=missing::Union{Missing,TimeArray{<:Real,2,D}},
+                μ=missing::Union{Missing,TimeArray{<:Real,2,D}}
                 ) where {D<:TimeType}
 
-        if length(u₀) != length(varnames)
-            error("u₀ must have length $(length(varnames))")
-        end
+        @assert length(u₀) == length(varnames) "u₀ must have length $(length(varnames))"
+
         if ismissing(C)
             if size(data,2) == length(varnames)
                 _C = Diagonal(ones(length(varnames)))
@@ -77,37 +78,44 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 _C = float(C)
             end
         end
-        if start < timestamp(data)[1]
-            error("start date must be after the last date available in data")
-        end
-        if start > timestamp(data)[end]
-            error("start date must be before the last date available in data")
-        end
-        if stop < start
-            error("stop date must be after the start date")
-        end
-        if step <= Day(0)
-            error("step must be a positive time period")
-        end
+
+        @assert start > timestamp(data)[1] "start date must be after the last date available in data"
+        @assert start < timestamp(data)[end] "start date must be before the last date available in data"
+        @assert stop > start "stop date must be after the start date"
+        @assert step > Day(0) "step must be a positive time period"
+
+        @assert size(σ,2) == length(varnames) "σ must have $(length(varnames)) columns"
+        @assert colnames(σ) == varnames "columns of σ must have names $varnames"
+
+        @assert size(μ,2) == length(parnames) "μ must have $(length(parnames)) columns"
+        @assert colnames(μ) == parnames "columns of μ must have names $parnames"
 
         # time
         t = start:step:stop
 
         # Copy data to working data array ux
         _data = TimeArray(t,zeros(length(t),size(data,2)),colnames(data),Dict{String,Any}())
-        overlap = intersect(t,timestamp(data))
-        lrows = indexin(overlap,t)
-        rrows = indexin(overlap,timestamp(data))
-        values(_data)[lrows,:] = values(data)[rrows,:]
-        meta(_data)["last_day_idxs"] = lrows[end]
+        _data_idxs,data_idxs = Corona.overlap(t,timestamp(data))
+        values(_data)[_data_idxs,:] = values(data)[data_idxs,:]
+        meta(_data)["last_day_idxs"] = _data_idxs[end]
 
         # Initialize forcing window
         _σ = TimeArray(t,zeros(length(t),length(varnames)),varnames)
-        values(_σ)[lrows,:] .= 1.0
+        if ismissing(σ)
+            values(_σ)[_data_idxs,:] .= 1.0
+        else
+            _σ_idxs,σ_idxs = overlap(t,timestamp(σ))
+            values(_σ)[_σ_idxs,:] = values(σ)[σ_idxs,:]
+        end
 
         # Initialize control window
         _μ = TimeArray(t,zeros(length(t),length(parnames)),parnames)
-        values(_μ)[lrows,:] .= 1.0
+        if ismissing(μ)
+            values(_μ)[_data_idxs,:] .= 1.0
+        else
+            _μ_idxs,μ_idxs = overlap(t,timestamp(μ))
+            values(_μ)[_μ_idxs,:] = values(μ)[μ_idxs,:]
+        end
 
         # Initialize model parameters
         _p = TimeArray(t,zeros(length(t),length(parnames)),parnames)
@@ -117,12 +125,10 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 values(_p)[:,k] .= p[v]
             end
         else
-            overlap = intersect(t,timestamp(p))
-            lrows = indexin(overlap,t)
-            rrows = indexin(overlap,timestamp(p))
+            _p_idxs,p_idxs = overlap(t,timestamp(p))
             for (k,v) in enumerate(parnames)
                 in(v,colnames(p)) || error("p does not have column $v")
-                values(_p)[lrows,k] = values(p)[rrows,indexin([v],parnames)]
+                values(_p)[_p_idxs,k] = values(p)[p_idxs,indexin([v],parnames)]
             end
         end
 
@@ -309,7 +315,7 @@ function backward(base::Baseline; maxiters=1000000::Int)
     trange = range(tspan...,length=size(base.u,1))
     v₀ = zeros(size(base.u,2))
     adj = ODEProblem(sir_adj,v₀,tspan,base,maxiters=maxiters)
-    adj_sol = solve(adj)
+    adj_sol = solve(adj,tstops=trange)
     v = collect(adj_sol(reverse(trange))')
     TimeArray(timestamp(base.u),v,colnames(base.u))
 end

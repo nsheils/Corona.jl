@@ -7,10 +7,10 @@ using Formatting
 
 ### Parameters
 maxiters     = 1000000;
-tolerance    = 0.01;
+tolerance    = 0.08;
 screenfreq   = 100;
 sponge       = 30;
-opt          = Momentum(1e-11, 0.99);
+opt          = Momentum(1e-13, 0.99);
 coldstart    = true;
 region       = "New York";
 
@@ -45,18 +45,20 @@ else
     init_p = Corona.load_model_params(dataconfig,region)
 end;
 
+### Create windows
+control_time =  timestamp(data.cases);
+#control_time = Date(2020,03,02):Day(1):Date(2020,04,01);
+#control_time = Date(2020,03,24):Day(1):Date(2020,04,08);
+observation_time = control_time;
+
+σ = TimeArray(control_time,ones(length(control_time),4),[:S,:I,:R,:D]);
+μ = TimeArray(observation_time,ones(length(observation_time),3),[:β,:γ,:δ]);
+
 ### Initialize data assimilation
 base = Corona.Baseline(data.cases, init_u, init_p,
                 C = data.map, start = data.outbreakdate,
-                stop = timestamp(data.cases)[end] + Day(sponge));
-
-### Set windows
-obs = indexin(data.outbreakdate:Day(1):Date(2020,03,24),timestamp(base.σ));
-values(base.σ) .= 0.0;
-values(base.σ)[obs,:] .= 1.0;
-
-values(base.μ) .= 0.0;
-values(base.μ)[obs,:] .= 1.0;
+                stop = timestamp(data.cases)[end] + Day(sponge),
+                σ = σ, μ = μ);
 
 ### Print some other information
 if coldstart
@@ -67,6 +69,9 @@ end
 printfmt(" with tolerance {}\n",tolerance)
 printfmt("| maximum number of iterations {}\n",maxiters)
 print("└ and optimiser $opt\n\n")
+
+println("Control time range: $control_time")
+println("Observation time range: $observation_time\n")
 
 ### Exectue data assimilation
 da_run = Corona.DA(base);
