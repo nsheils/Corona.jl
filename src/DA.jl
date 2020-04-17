@@ -15,52 +15,40 @@ mutable struct Baseline{T<:Real,D<:TimeType}
     data::TimeArray{T,2,D}
     C::Matrix{T}
     σ::TimeArray{T,2,D}
+    μ::TimeArray{T,2,D}
     u::TimeArray{T,2,D}
-    p::TimeArray{T,2,D}
     g::TimeArray{T,2,D}
+    p::TimeArray{T,2,D}
 
     function Baseline(data::TimeArray{T,2,D},
                       C::Matrix{T},
                       σ::TimeArray{T,2,D},
+                      μ::TimeArray{T,2,D},
                       u::TimeArray{T,2,D},
-                      p::TimeArray{T,2,D},
                       g::TimeArray{T,2,D},
+                      p::TimeArray{T,2,D},
                       ) where {T,D}
 
-       if timestamp(data) != timestamp(σ) ||
-          timestamp(data) != timestamp(u) ||
-          timestamp(data) != timestamp(p)
-            error("input arguments timestamps are difform")
-       end
+       @assert timestamp(data) == timestamp(σ) == timestamp(μ) ==
+            timestamp(u) == timestamp(g) == timestamp(p)
+            "input arguments timestamps are difform"
+
        size_C = (size(data,2),length(varnames))
-       if size(C) != size_C
-           error("C must have size $size_C")
-       end
-       if size(σ,2) != length(varnames)
-           error("σ must have $(length(varnames)) columns")
-       end
-       if colnames(σ) != varnames
-           error("columns of σ must have names $varnames")
-       end
-       if size(u,2) != length(varnames)
-           error("u must have $(length(varnames)) columns")
-       end
-       if colnames(u) != varnames
-           error("columns of u must have names $varnames")
-       end
-       if size(p,2) != length(parnames)
-           error("u must have $(length(parnames)) columns")
-       end
-       if colnames(p) != parnames
-           error("columns of p must have names $parnames")
-       end
-       if size(g,2) != length(varnames)
-           error("u must have $(length(parnames)) columns")
-       end
-       if colnames(g) != varnames
-           error("columns of g must have names $varnames")
-       end
-       new{T,D}(data,C,σ,u,p,g)
+       @assert size(C) == size_C "C must have size $size_C"
+
+       @assert size(σ,2) == length(varnames) "σ must have $(length(varnames)) columns"
+       @assert colnames(σ) == varnames "columns of σ must have names $varnames"
+
+       @assert size(μ,2) == length(parnames) "μ must have $(length(parnames)) columns"
+       @assert colnames(μ) == parnames "columns of μ must have names $parnames"
+
+       @assert size(u,2) == length(varnames) "u must have $(length(varnames)) columns"
+       @assert colnames(u) == varnames "columns of u must have names $varnames"
+
+       @assert size(p,2) == length(parnames) "u must have $(length(parnames)) columns"
+       @assert colnames(p) == parnames "columns of p must have names $parnames"
+
+       new{T,D}(data,C,σ,μ,u,g,p)
     end
 
     function Baseline(
@@ -113,9 +101,13 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         values(_data)[lrows,:] = values(data)[rrows,:]
         meta(_data)["last_day_idxs"] = lrows[end]
 
-        # Initialize window
+        # Initialize forcing window
         _σ = TimeArray(t,zeros(length(t),length(varnames)),varnames)
         values(_σ)[lrows,:] .= 1.0
+
+        # Initialize control window
+        _μ = TimeArray(t,zeros(length(t),length(parnames)),parnames)
+        values(_μ)[lrows,:] .= 1.0
 
         # Initialize model parameters
         _p = TimeArray(t,zeros(length(t),length(parnames)),parnames)
@@ -142,7 +134,10 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         end
         _u = forward(_p,_u₀)
 
-        new{Float64,D}(_data,_C,_σ,_u,_p,_g)
+        # Initialize forcing
+        _g = forcing(_data,_C,_σ,_u)
+
+        new{Float64,D}(_data,_C,_σ,_μ,_u,_g,_p)
     end
 end
 
@@ -150,17 +145,17 @@ mutable struct DA{T<:Real,D<:TimeType}
     data::TimeArray{T,2,D}
     C::Matrix{T}
     σ::TimeArray{T,2,D}
+    μ::TimeArray{T,2,D}
     u::TimeArray{T,2,D}
-    v::TimeArray{T,2,D}
-    p::TimeArray{T,2,D}
-    δp::TimeArray{T,2,D}
     g::TimeArray{T,2,D}
+    p::TimeArray{T,2,D}
+    v::TimeArray{T,2,D}
+    δp::TimeArray{T,2,D}
 
     function DA(base::Baseline{T,D}) where {T,D}
         v = backward(base)
         δp = gradient(base,v)
-        g = forcing(base)
-        new{T,D}(base.data,base.C,base.σ,base.u,v,base.p,δp,g)
+        new{T,D}(base.data,base.C,base.σ,base.μ,base.u,base.g,base.p,v,δp)
     end
 
     function DA(da::DA, α::Real)
@@ -174,14 +169,15 @@ mutable struct DA{T<:Real,D<:TimeType}
     function DA(da::DA, δp::Array{<:Real,2})
         p = max.(da.p .- δp, 0.0)
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
-        u = forward(p,u₀)
-        base = Baseline(da.data,da.C,da.σ,u,p)
+        u = forward(p, u₀)
+        g = forcing(da.data, da.C ,da.σ ,u)
+        base = Baseline(da.data,da.C,da.σ,da.μ,u,g,p)
         DA(base)
     end
 end
 
 function baseline(da::DA)
-    Baseline(da.data,da.C,da.σ,da.u,da.p)
+    Baseline(da.data,da.C,da.σ,da.μ,da.u,da.g,da.p)
 end
 
 function residual(da::DA; relative=false::Bool, norm=LinearAlgebra.norm::Function)
@@ -193,7 +189,7 @@ function residual(da::DA; relative=false::Bool, norm=LinearAlgebra.norm::Functio
 end
 
 function datanorm(da::DA; norm=LinearAlgebra.norm::Function)
-    norm(values(da.data).*values(da.σ))
+    norm(values(da.data) * da.C .*values(da.σ))
 end
 
 function extend_solution!(da::DA)
@@ -260,13 +256,12 @@ function sir_adj(v::Vector{Float64}, base::Baseline, t::Float64)
 
     data = values(base.data)[it,:]
     u = values(base.u)[it,:]
-    σ = values(base.σ)[it,:]
     g = values(base.g)[it,:]
 
     p = _interpolation(values(base.p),it,Δt)
 
     A = dfdu(u,p,t)
-    dv = -A'*v - g.*σ
+    dv = -A'*v - g
 
     return dv
 end
@@ -330,16 +325,14 @@ function gradient(base::Baseline, v::TimeArray)
     TimeArray(timestamp(base.p),δp,colnames(base.p))
 end
 
-function forcing(data::TimeArray{Float64,2}, u::TimeArray{Float64,2},
-                 C::Matrix{Float64})
-    data = values(base.data)
-    u = values(base.u)
-    C = base.C
-    g = (values(u) * C' - values(data)) * C
-    TimeArray(timestamp(base.u),g,colnames(base.u))
+function forcing(data::TimeArray{Float64,2}, C::Matrix{Float64},
+                 σ::TimeArray{Float64,2}, u::TimeArray{Float64,2})
+    g = (values(u) .* values(σ) * C' - values(data)) * C .* values(σ)
+    TimeArray(timestamp(u), g, colnames(u))
 end
 
 function apply!(opt, da::DA)
-    Δp = apply!(opt,values(da.p),values(da.δp))
-    DA(da,Δp)
+    δp = values(da.δp) .* values(da.μ)
+    Δp = apply!(opt, values(da.p), δp)
+    DA(da, Δp)
 end

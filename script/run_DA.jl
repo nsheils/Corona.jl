@@ -12,7 +12,7 @@ screenfreq   = 100;
 sponge       = 30;
 opt          = Momentum(1e-11, 0.99);
 coldstart    = true;
-region       = "Bayern";
+region       = "New York";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -49,6 +49,14 @@ end;
 base = Corona.Baseline(data.cases, init_u, init_p,
                 C = data.map, start = data.outbreakdate,
                 stop = timestamp(data.cases)[end] + Day(sponge));
+
+### Set windows
+obs = indexin(data.outbreakdate:Day(1):Date(2020,03,24),timestamp(base.σ));
+values(base.σ) .= 0.0;
+values(base.σ)[obs,:] .= 1.0;
+
+values(base.μ) .= 0.0;
+values(base.μ)[obs,:] .= 1.0;
 
 ### Print some other information
 if coldstart
