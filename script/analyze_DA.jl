@@ -3,73 +3,48 @@ using Plots
 using FileIO, JLD2
 using TimeSeries
 using LaTeXStrings
+using Formatting
 
-##
-region="New York City"
-regiondir="US-New_York-New_York"
-figpath=joinpath("figs",regiondir)
-filename=joinpath("results",regiondir,"da.jld2")
+### Load configuration
+dataconfig = Corona.DataConfig();
+include("../config/data.jl");
 
-##
-da = load(filename)
+## Select region and paths
+region = "New York";
+filename = Corona.build_filename(dataconfig,region);
+figdir = joinpath("figs",filename);
+mkpath(figdir);
+datapath = joinpath("results",filename,"da.jld2");
 
-##
-daC=rename(da["result"].I .+ da["result"].R .+ da["result"].D,:I_R_D => :C)
+## Load data
+da = load(datapath,"da");
+lastday = timestamp(da.data)[meta(da.data)["last_day_idxs"]];
 
-globtime = timestamp(da["result"])
-datatime = globtime[1:meta(da["data"])["last_day_idxs"]]
+## Compute residual
+J = Corona.residual(da, relative=true);
 
-##
-scatter(da["data"][datatime].Confirmed,color=:orange,Atickfontsize=12,title=region,legend=:topleft)
-scatter!(da["data"][datatime].Deaths,color=:black)
+## Plot results
+plot(da,region)
+title!(format("King County, Washington, J = {:.3f} %",J*100))
+savefig(joinpath(figdir,"da.pdf"))
 
-plot!(daC[datatime],legend=:topleft,color=:orange,lw=3)
-plot!(da["result"][datatime].I,color=:red, lw=3)
-plot!(da["result"][datatime].R,color=:green, lw=3)
-plot!(da["result"][datatime].D,color=:black, lw=3)
+## Plot results in log scale
+plot(da,region,yaxis=:log10,legend=:bottomright)
+title!(format("King County, Washington, J = {:.3f} %",J*100))
+savefig(joinpath(figdir,"da_log.pdf"))
 
-##
-savefig(joinpath(figpath,"da.pdf"))
+## Plot model parameters
+ptime = Date(2020,3,24):Day(1):lastday;
+plot(da.p.β[ptime],color=:red, lw=3, legend=false)
+scatter!(da.p.β[ptime],color=:red, lw=3)
+ylabel!("beta")
+title!(format("King County, Washington, J = {:.3f} %",J*100))
+savefig(joinpath(figdir,"beta.pdf"))
 
-
-##
-scatter(da["data"][datatime].Confirmed,color=:orange,
- tickfontsize=12,title=region,legend=:topleft,yaxis=:log10)
-scatter!(da["data"][datatime].Deaths .+ 1,color=:black,yaxis=:log10)
-plot!(daC[datatime],legend=:topleft,color=:orange,lw=3)
-plot!(da["result"][datatime].I,color=:red, lw=3)
-plot!(da["result"][datatime].R .+ 1 ,color=:green, lw=3)
-plot!(da["result"][datatime].D .+ 1,color=:black, lw=3)
-
-##
-# savefig("/home/jls/data/2020-Corona/figs/Italy/da_log.pdf")
-savefig(joinpath(figpath,"da_log.pdf"))
-
-##
-scatter(da["model_params"][datatime].β,lw=3,label=L"\beta",title=region,color=:blue)
-scatter!(da["model_params"][datatime].γ,lw=3,label=L"\gamma",title=region,color=:red)
-scatter!(da["model_params"][datatime].δ,lw=3,label=L"\delta",title=region,color=:orange)
-
-
-##
-t=Date(2020,03,21):Day(1):Date(2020,04,08)
-σ = da["model_params"][t].β./(da["model_params"][t].γ.+da["model_params"][t].δ)
-scatter(σ,lw=3,label=L"\sigma",title=region,color=:blue)
-
-##
-savefig(joinpath(figpath,"da_sigma.pdf"))
-
-
-##
-scatter(da["data"][datatime].Confirmed,color=:orange,tickfontsize=12,title=region,legend=:topleft)
-scatter!(da["data"][datatime].Deaths,color=:black)
-
-plot!(daC,legend=:topleft,color=:orange,lw=3)
-plot!(da["result"].I,color=:red, lw=3)
-plot!(da["result"].R,color=:green, lw=3)
-plot!(da["result"].D,color=:black, lw=3)
-
-##
-savefig(joinpath(figpath,"da_fc.pdf"))
-
-""
+## Plot model parameters
+σ=da.p.β./(da.p.γ .+ da.p.δ);
+plot(σ[ptime],color=:orange, lw=3, legend=false)
+scatter!(σ[ptime],color=:orange, lw=3)
+ylabel!("sigma")
+title!(format("King County, Washington, J = {:.3f} %",J*100))
+savefig(joinpath(figdir,"sigma.pdf"))

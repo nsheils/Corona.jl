@@ -7,10 +7,10 @@ using Formatting
 
 ### Parameters
 maxiters     = 1000000;
-tolerance    = 0.001;
+tolerance    = 0.01;
 screenfreq   = 100;
 sponge       = 30;
-opt          = Momentum(1e-13, 0.99);
+opt          = Momentum(1e-11, 0.99);
 coldstart    = true;
 region       = "Bayern";
 
@@ -66,7 +66,7 @@ da_opt = da_run;
 
 ### Initialize residual
 J = Vector{Union{Missing,Float64}}(missing,maxiters);
-J_ini = norm(values(da_run.data).*values(da_run.σ));
+J_ini = Corona.datanorm(da_run);
 J_min = Inf;
 J_argmin = 1;
 
@@ -89,7 +89,6 @@ try
             iscreen = i-screenfreq+1:i
             if argmin(skipmissing(J)) in iscreen
                 color=:green
-                n_old=i;
             else
                 color=:red
             end
