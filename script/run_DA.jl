@@ -7,11 +7,18 @@ using Formatting
 
 ### Parameters
 maxiters     = 1000000;
-tolerance    = 0.08;
+tolerance    = 0.001;
 screenfreq   = 100;
 sponge       = 30;
-opt          = Momentum(1e-13, 0.99);
-coldstart    = true;
+opt          = Flux.Optimiser(
+                ExpDecay(1e-10, 0.1, 10000),
+                Momentum(1.0, 0.99)
+                );
+# opt          = Momentum(1e-13, 0.99);
+#opt          = NADAM(1e-12, (0.89, 0.995))
+coldstart    = false;
+c₀           = Day(20);
+Δc           = Day(7);
 region       = "New York";
 
 ############################################################
@@ -46,12 +53,14 @@ else
 end;
 
 ### Create windows
-control_time =  timestamp(data.cases);
+#control_time =  timestamp(data.cases);
 #control_time = Date(2020,03,02):Day(1):Date(2020,04,01);
 #control_time = Date(2020,03,24):Day(1):Date(2020,04,08);
+
+control_time = data.outbreakdate + c₀:Day(1):data.outbreakdate + c₀ + Δc;
 observation_time = control_time;
 
-σ = TimeArray(control_time,ones(length(control_time),4),[:S,:I,:R,:D]);
+σ = TimeArray(control_time,repeat([1.0 1.0 1.0 1.0],length(control_time),1),[:S,:I,:R,:D]);
 μ = TimeArray(observation_time,ones(length(observation_time),3),[:β,:γ,:δ]);
 
 ### Initialize data assimilation
@@ -124,5 +133,8 @@ catch e
     print("Keyboard interrupt\n")
 end
 
+### Useful for plotting
+da = da_opt
+
 ### Save data assimilation result
-Corona.save(dataconfig,region,da_opt,interactive=true)
+Corona.save(dataconfig,region,da,interactive=true)
