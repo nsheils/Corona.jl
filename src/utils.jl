@@ -11,9 +11,14 @@ function input(prompt::AbstractString="")
    chomp(readline())
 end
 
-function overlap(a::AbstractArray, b::AbstractArray)
-   ab = intersect(a,b)
-   loca = indexin(ab,a)
-   locb = indexin(ab,b)
-   loca,locb
+
+"""
+   overlap(x1, x2,..., xn) -> i1, i2,..., in
+
+Return the (first) indices of the common elements in the vectors
+`x1, x2 ,..., xn` so that `x1[i1] = x2[i2] = x3[i3] = ... = xn[in]`.
+"""
+function overlap(X::Vararg{AbstractVector})
+   I = intersect(X...)
+   (indexin(I,x) for x in X)
 end
