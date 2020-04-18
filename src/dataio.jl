@@ -6,8 +6,7 @@ using Unicode
 ###### structures #################
 
 mutable struct DataConfig
-  rawdata_path::String
-  results_path::String
+  paths::DefaultDict{AbstractString,String}
   sources::DefaultDict{AbstractString,String}
   loaders::DefaultDict{AbstractString,String}
   data_dirs::DefaultDict{AbstractString,String}
@@ -18,8 +17,7 @@ mutable struct DataConfig
   outbreak_conditions::DefaultDict{AbstractString,Function}
     function DataConfig()
       new(
-        "raw", # rawdata_path
-        "results", # results_path
+        DefaultDict{AbstractString,String}(k -> k; passkey=true), # paths
         DefaultDict{AbstractString,String}("native"), # sources
         DefaultDict{AbstractString,String}("native"), # loaders
         DefaultDict{AbstractString,String}(""), # data_dirs
@@ -80,7 +78,7 @@ end
 
 function load_data(config::DataConfig,region::AbstractString)
     source = config.sources[region]
-    path = config.rawdata_path
+    path = config.paths["raw"]
     loader = config.loaders[source]
     cases = _load_data(Val(Symbol(loader)),config.args_data_loader[region],
                         joinpath(path,config.data_dirs[source]))
@@ -112,13 +110,15 @@ end
 
 function save(config::DataConfig,region::AbstractString,da::DA;
               interactive=false::Bool)
-    path = joinpath(config.results_path,build_filename(config,region))
+    path = joinpath(config.paths["results"],build_filename(config,region))
     mkpath(path)
     filename = joinpath(path,"da.jld2")
     if interactive && isfile(filename)
-        if input("overwrite `$filename'? ") != "y"
-            return
+        response = ""
+        while isempty(response)
+            response = input("overwrite `$filename'? ")
         end
+        response == "y" || return
     end
     _save(filename,da)
 end
@@ -132,7 +132,7 @@ function _save(filename::AbstractString,da::DA,opt=missing)
 end
 
 function load_model_params(config::DataConfig,region::AbstractString)
-    filename = joinpath(config.results_path,build_filename(config,region),"da.jld2")
+    filename = joinpath(config.paths["results"],build_filename(config,region),"da.jld2")
     da = FileIO.load(filename,"da")
     da.p
 end
