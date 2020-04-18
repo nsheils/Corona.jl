@@ -17,7 +17,7 @@ region = "New York";
 title = "New York City";
 
 ## Select region and paths
-fname = Corona.build_fname(dataconfig,region);
+fname = Corona.build_filename(dataconfig,region);
 figdir = joinpath("figs",fname);
 mkpath(figdir);
 datapath = joinpath(dataconfig.results_path,fname,"da.jld2");
