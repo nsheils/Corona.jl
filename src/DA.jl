@@ -211,11 +211,15 @@ function _interpolation(p::AbstractArray{Float64},it::Int,Δt::Float64)
     # else
     #     p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
     # end
-    if it < size(p,1)
-        p=(p[it,:] + p[it+1,:])/2
-    else
-        p[it,:]
-    end
+    # if it < size(p,1)
+    #     p=(p[it,:] + p[it+1,:])/2
+    # else
+    #     p[it,:]
+    # end
+    n = size(p, 1)
+    i₁ = min(max(it, 1), n)
+    i₂ = min(max(it + 1, 1), n)
+    p[i₁,:] + (p[i₂,:] - p[i₁,:]) * Δt
 end
 
 "Classic Epidemic Model  Hethcote (2000), added deaths"
@@ -260,10 +264,13 @@ function sir_adj(v::Vector{Float64}, base::Baseline, t::Float64)
     it = floor(Int,t) + 1
     Δt = t - floor(t)
 
-    data = values(base.data)[it,:]
-    u = values(base.u)[it,:]
-    g = values(base.g)[it,:]
+    # data = values(base.data)[it,:]
+    # u = values(base.u)[it,:]
+    # g = values(base.g)[it,:]
 
+    data = _interpolation(values(base.data),it,Δt)
+    u = _interpolation(values(base.u),it,Δt)
+    g = _interpolation(values(base.g),it,Δt)
     p = _interpolation(values(base.p),it,Δt)
 
     A = dfdu(u,p,t)
