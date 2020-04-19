@@ -108,8 +108,8 @@ end
 
 ###### save/load results #################
 
-function save(config::DataConfig,region::AbstractString,da::DA;
-              interactive=false::Bool)
+function save(config::DataConfig, region::AbstractString, da::DA;
+              interactive=false::Bool, kwargs...)
     path = joinpath(config.paths["results"],build_filename(config,region))
     mkpath(path)
     filename = joinpath(path,"da.jld2")
@@ -120,11 +120,16 @@ function save(config::DataConfig,region::AbstractString,da::DA;
         end
         response == "y" || return
     end
-    _save(filename,da)
+    _save(filename, da; kwargs...)
 end
 
-function _save(filename::AbstractString,da::DA,opt=missing)
+function _save(filename::AbstractString, da::DA;
+               data::Union{Missing,DataStruct}=missing,
+               opt=missing)
     dat = ["da", da]
+    if !ismissing(data)
+        push!(dat, "data", data)
+    end
     if !ismissing(opt)
         push!(dat, "opt", opt)
     end
