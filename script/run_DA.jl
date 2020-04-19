@@ -8,17 +8,18 @@ using Formatting
 ### Parameters
 maxiters     = 1000000;
 tolerance    = 0.001;
-screenfreq   = 100;
-sponge       = 30;
-opt          = Flux.Optimiser(
-                ExpDecay(1e-10, 0.1, 10000),
-                Momentum(1.0, 0.99)
-                );
-# opt          = Momentum(1e-13, 0.99);
-#opt          = NADAM(1e-12, (0.89, 0.995))
+screenfreq   = 10;
+filterfreq   = 1000000;
+sponge       = 0;
+# opt          = Flux.Optimiser(
+#                 ExpDecay(1e-6, 0.1, 1000, 1e-8),
+#                 Momentum(1.0, 0.99)
+#                 );
+opt          = Momentum(1e-5, 0.99);
+# opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = false;
-c₀           = Day(20);
-Δc           = Day(7);
+c₀           = Day(14);
+Δc           = Day(8);
 region       = "New York";
 
 ############################################################
@@ -53,21 +54,21 @@ else
 end;
 
 ### Create windows
-#control_time =  timestamp(data.cases);
-#control_time = Date(2020,03,02):Day(1):Date(2020,04,01);
-#control_time = Date(2020,03,24):Day(1):Date(2020,04,08);
-
-control_time = data.outbreakdate + c₀:Day(1):data.outbreakdate + c₀ + Δc;
-observation_time = control_time;
-
-σ = TimeArray(control_time,repeat([1.0 1.0 1.0 1.0],length(control_time),1),[:S,:I,:R,:D]);
-μ = TimeArray(observation_time,ones(length(observation_time),3),[:β,:γ,:δ]);
+assimtime = data.outbreakdate+c₀:Day(1):min(data.lastdate,data.outbreakdate+c₀+Δc);
+σ = TimeArray(assimtime,ones(length(assimtime),4),[:S,:I,:R,:D]);
+μ = TimeArray(assimtime,ones(length(assimtime),3),[:β,:γ,:δ]);
 
 ### Initialize data assimilation
-base = Corona.Baseline(data.cases, init_u, init_p,
+base = Corona.Baseline(data.cases, init_u, init_p;
                 C = data.map, start = data.outbreakdate,
                 stop = timestamp(data.cases)[end] + Day(sponge),
-                σ = σ, μ = μ);
+                step = Hour(1), σ = σ, μ = μ);
+
+### Initialize residual
+J = Vector{Union{Missing,Float64}}(missing,maxiters);
+J_ini = Corona.datanorm(base);
+J_min = Inf;
+J_argmin = 1;
 
 ### Print some other information
 if coldstart
@@ -79,18 +80,11 @@ printfmt(" with tolerance {}\n",tolerance)
 printfmt("| maximum number of iterations {}\n",maxiters)
 print("└ and optimiser $opt\n\n")
 
-println("Control time range: $control_time")
-println("Observation time range: $observation_time\n")
+println("Assimilation time: $assimtime")
 
 ### Exectue data assimilation
 da_run = Corona.DA(base);
 da_opt = da_run;
-
-### Initialize residual
-J = Vector{Union{Missing,Float64}}(missing,maxiters);
-J_ini = Corona.datanorm(da_run);
-J_min = Inf;
-J_argmin = 1;
 
 ### Optimise data assimilation
 try
@@ -98,7 +92,7 @@ try
         global da_run, da_opt, J_min, J_argmin, convegence
 
         da_run = Corona.apply!(opt,da_run)
-        J[i] = Corona.residual(da_run)/J_ini
+        J[i] = Corona.residual(Corona.baseline(da_run))/J_ini
         Corona.extend_solution!(da_run)
 
         if J[i] < J_min
@@ -137,4 +131,4 @@ end
 da = da_opt
 
 ### Save data assimilation result
-Corona.save(dataconfig,region,da,interactive=true)
+Corona.save(dataconfig, region, da, data = data, opt = opt, interactive = true)
