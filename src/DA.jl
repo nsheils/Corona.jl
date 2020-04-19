@@ -2,6 +2,7 @@ using DifferentialEquations
 using LinearAlgebra
 using Flux
 using Formatting
+using Interpolations
 
 import Flux.Optimise: apply!
 
@@ -52,16 +53,17 @@ mutable struct Baseline{T<:Real,D<:TimeType}
     end
 
     function Baseline(
-                data::TimeArray{<:Real,2,D},
+                data::TimeArray{<:Real,2,<:TimeType},
                 u₀::Dict{Symbol,<:Real},
-                p::Union{Dict{Symbol,<:Real},TimeArray{<:Real,2,D}};
+                p::Union{Dict{Symbol,<:Real},TimeArray{<:Real,2,<:TimeType}};
                 C=missing::Union{Missing,Matrix{<:Real}},
-                start=timestamp(data)[1]::D,
+                start=timestamp(data)[1]::TimeType,
                 stop=start+Day(30)::Period,
                 step=Day(1)::Period,
-                σ=missing::Union{Missing,TimeArray{<:Real,2,D}},
-                μ=missing::Union{Missing,TimeArray{<:Real,2,D}}
-                ) where {D<:TimeType}
+                σ=missing::Union{Missing,TimeArray{<:Real,2,<:TimeType}},
+                μ=missing::Union{Missing,TimeArray{<:Real,2,<:TimeType}},
+                interptype=BSpline(Cubic(Line(OnGrid())))::Interpolations.InterpolationType
+                )
 
         @assert length(u₀) == length(varnames) "u₀ must have length $(length(varnames))"
 
@@ -79,7 +81,7 @@ mutable struct Baseline{T<:Real,D<:TimeType}
             end
         end
 
-        @assert start > timestamp(data)[1] "start date must be after the last date available in data"
+        @assert start >= timestamp(data)[1] "start date must be after the last date available in data"
         @assert start < timestamp(data)[end] "start date must be before the last date available in data"
         @assert stop > start "stop date must be after the start date"
         @assert step > Day(0) "step must be a positive time period"
@@ -91,30 +93,38 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         @assert colnames(μ) == parnames "columns of μ must have names $parnames"
 
         # time
-        t = start:step:stop
+        if step < Day(1)
+            t = DateTime(start):step:DateTime(stop)
+        else
+            t = start:step:stop
+        end
 
         # Copy data to working data array ux
         _data = TimeArray(t,zeros(length(t),size(data,2)),colnames(data),Dict{String,Any}())
-        _data_idxs,data_idxs = Corona.overlap(t,timestamp(data))
-        values(_data)[_data_idxs,:] = values(data)[data_idxs,:]
-        meta(_data)["last_day_idxs"] = _data_idxs[end]
+        for j=1:size(data,2)
+            values(_data)[:,j] = _interpolation(timerange(timestamp(data)),
+                                    values(data)[:,j], t, interptype, Flat())
+        end
+        meta(_data)["last_day_idxs"] = findfirst(timestamp(data)[end] .== convert.(eltype(timestamp(data)),t))
 
         # Initialize forcing window
         _σ = TimeArray(t,zeros(length(t),length(varnames)),varnames)
         if ismissing(σ)
-            values(_σ)[_data_idxs,:] .= 1.0
-        else
-            _σ_idxs,σ_idxs = overlap(t,timestamp(σ))
-            values(_σ)[_σ_idxs,:] = values(σ)[σ_idxs,:]
+            σ = TimeArray(timestamp(data),ones(size(data,1),length(varnames)),varnames)
+        end
+        for j=1:size(σ,2)
+            values(_σ)[:,j] = _interpolation(timerange(timestamp(σ)),
+                                values(σ)[:,j], t, interptype, 0.0)
         end
 
         # Initialize control window
         _μ = TimeArray(t,zeros(length(t),length(parnames)),parnames)
         if ismissing(μ)
-            values(_μ)[_data_idxs,:] .= 1.0
-        else
-            _μ_idxs,μ_idxs = overlap(t,timestamp(μ))
-            values(_μ)[_μ_idxs,:] = values(μ)[μ_idxs,:]
+            μ = TimeArray(timestamp(data),ones(size(data,1),length(parnames)),parnames)
+        end
+        for j=1:size(μ,2)
+            values(_μ)[:,j] = _interpolation(timerange(timestamp(μ)),
+                                values(μ)[:,j], t, interptype, 0.0)
         end
 
         # Initialize model parameters
@@ -125,10 +135,9 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 values(_p)[:,k] .= p[v]
             end
         else
-            _p_idxs,p_idxs = overlap(t,timestamp(p))
-            for (k,v) in enumerate(parnames)
-                in(v,colnames(p)) || error("p does not have column $v")
-                values(_p)[_p_idxs,k] = values(p)[p_idxs,indexin([v],parnames)]
+            for j=1:size(p,2)
+                values(_p)[:,j] = _interpolation(timerange(timestamp(p)),
+                                    values(p)[:,j], t, interptype, Flat())
             end
         end
 
@@ -143,7 +152,7 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         # Initialize forcing
         _g = forcing(_data,_C,_σ,_u)
 
-        new{Float64,D}(_data,_C,_σ,_μ,_u,_g,_p)
+        new{Float64,eltype(t)}(_data,_C,_σ,_μ,_u,_g,_p)
     end
 end
 
@@ -186,21 +195,36 @@ function baseline(da::DA)
     Baseline(da.data,da.C,da.σ,da.μ,da.u,da.g,da.p)
 end
 
-function residual(da::DA; relative=false::Bool, norm=LinearAlgebra.norm::Function)
-    J = norm(values(da.g))
+function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm::Function)
+    J = norm(values(base.g))
     if relative
-        J = J/datanorm(da, norm=norm)
+        J = J/datanorm(base, norm=norm)
     end
     J
 end
 
-function datanorm(da::DA; norm=LinearAlgebra.norm::Function)
-    norm(values(da.data) * da.C .*values(da.σ))
+function datanorm(base::Baseline; norm=LinearAlgebra.norm::Function)
+    norm(values(base.data) * base.C .*values(base.σ))
 end
 
 function extend_solution!(da::DA)
     idxs = meta(da.data)["last_day_idxs"]-1
     values(da.p)[idxs+1:end,:] .= values(da.p)[idxs:idxs,:]
+end
+
+function timerange(d::AbstractArray{<:TimeType})
+    drange = range(d[1], d[end], step = d[2] - d[1])
+    @assert d == drange "d must be equispaced in time"
+    drange
+end
+
+function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
+                    tq::AbstractVector{<:TimeType}, interptype, extrapscheme)
+        x = datetime2unix(DateTime(t.start)):Second(t.step).value:datetime2unix(DateTime(t.stop))
+        xq = datetime2unix.(DateTime.(tq))
+        itp = scale(interpolate(u, interptype), x)
+        etp = extrapolate(itp, extrapscheme)
+        etp.(xq)
 end
 
 function _interpolation(p::AbstractArray{Float64},it::Int,Δt::Float64)
@@ -335,7 +359,8 @@ function gradient(base::Baseline, v::TimeArray)
     for i=1:size(u,2)
         δp = δp + values(v)[:,i] .* f[:,i,:]
     end
-    TimeArray(timestamp(base.p),δp,colnames(base.p))
+    δp ./= maximum(abs.(δp))
+    TimeArray(timestamp(base.p), δp, colnames(base.p))
 end
 
 function forcing(data::TimeArray{Float64,2}, C::Matrix{Float64},
