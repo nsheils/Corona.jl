@@ -13,6 +13,7 @@ const parnames = [:β,:γ,:δ]
 ###### structures #################
 
 mutable struct Baseline{T<:Real,D<:TimeType}
+    time::StepRange{D}
     data::TimeArray{T,2,D}
     C::Matrix{T}
     σ::TimeArray{T,2,D}
@@ -21,7 +22,8 @@ mutable struct Baseline{T<:Real,D<:TimeType}
     g::TimeArray{T,2,D}
     p::TimeArray{T,2,D}
 
-    function Baseline(data::TimeArray{T,2,D},
+    function Baseline(time::StepRange{D},
+                      data::TimeArray{T,2,D},
                       C::Matrix{T},
                       σ::TimeArray{T,2,D},
                       μ::TimeArray{T,2,D},
@@ -31,7 +33,7 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                       ) where {T,D}
 
        @assert timestamp(data) == timestamp(σ) == timestamp(μ) ==
-            timestamp(u) == timestamp(g) == timestamp(p)
+            timestamp(u) == timestamp(g) == timestamp(p) == time
             "input arguments timestamps are difform"
 
        size_C = (size(data,2),length(varnames))
@@ -49,7 +51,7 @@ mutable struct Baseline{T<:Real,D<:TimeType}
        @assert size(p,2) == length(parnames) "u must have $(length(parnames)) columns"
        @assert colnames(p) == parnames "columns of p must have names $parnames"
 
-       new{T,D}(data,C,σ,μ,u,g,p)
+       new{T,D}(time, data, C, σ, μ, u, g, p)
     end
 
     function Baseline(
@@ -105,7 +107,7 @@ mutable struct Baseline{T<:Real,D<:TimeType}
             values(_data)[:,j] = _interpolation(timerange(timestamp(data)),
                                     values(data)[:,j], t, interptype, Flat())
         end
-        meta(_data)["last_day_idxs"] = findfirst(timestamp(data)[end] .== convert.(eltype(timestamp(data)),t))
+        meta(_data)["lastdate"] = convert(eltype(t), timestamp(data)[end])
 
         # Initialize forcing window
         _σ = TimeArray(t,zeros(length(t),length(varnames)),varnames)
@@ -147,16 +149,33 @@ mutable struct Baseline{T<:Real,D<:TimeType}
             haskey(u₀,v) || error("u₀ does not have key $v")
             _u₀[v] = u₀[v]
         end
-        _u = forward(_p,_u₀)
+        _u = forward(t, values(_p), _u₀)
 
         # Initialize forcing
         _g = forcing(_data,_C,_σ,_u)
 
-        new{Float64,eltype(t)}(_data,_C,_σ,_μ,_u,_g,_p)
+        new{Float64,eltype(t)}(t, _data, _C, _σ, _μ, _u, _g, _p)
+    end
+end
+
+struct BaselineInterpolation{T<:Real}
+    data::AbstractInterpolation{T,2}
+    u::AbstractInterpolation{T,2}
+    g::AbstractInterpolation{T,2}
+    p::AbstractInterpolation{T,2}
+
+    function BaselineInterpolation(base::Baseline{T}, trange::AbstractRange{<:Real}) where {T}
+        interptype = (BSpline(Linear()), NoInterp())
+        data = scale(interpolate(values(base.data), interptype), trange, 1:size(base.data,2))
+        u = scale(interpolate(values(base.u), interptype), trange, 1:size(base.u,2))
+        g = scale(interpolate(values(base.g), interptype), trange, 1:size(base.g,2))
+        p = scale(interpolate(values(base.p), interptype), trange, 1:size(base.p,2))
+        new{T}(data, u, g, p)
     end
 end
 
 mutable struct DA{T<:Real,D<:TimeType}
+    time::StepRange{D}
     data::TimeArray{T,2,D}
     C::Matrix{T}
     σ::TimeArray{T,2,D}
@@ -170,7 +189,8 @@ mutable struct DA{T<:Real,D<:TimeType}
     function DA(base::Baseline{T,D}) where {T,D}
         v = backward(base)
         δp = gradient(base,v)
-        new{T,D}(base.data,base.C,base.σ,base.μ,base.u,base.g,base.p,v,δp)
+        new{T,D}(base.time, base.data, base.C, base.σ, base.μ,
+                    base.u, base.g,base.p, v, δp)
     end
 
     function DA(da::DA, α::Real)
@@ -184,15 +204,15 @@ mutable struct DA{T<:Real,D<:TimeType}
     function DA(da::DA, δp::Array{<:Real,2})
         p = max.(da.p .- δp, 0.0)
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
-        u = forward(p, u₀)
+        u = forward(da.time, values(p), u₀)
         g = forcing(da.data, da.C ,da.σ ,u)
-        base = Baseline(da.data,da.C,da.σ,da.μ,u,g,p)
+        base = Baseline(da.time, da.data, da.C, da.σ, da.μ, u, g, p)
         DA(base)
     end
 end
 
 function baseline(da::DA)
-    Baseline(da.data,da.C,da.σ,da.μ,da.u,da.g,da.p)
+    Baseline(da.time, da.data, da.C, da.σ, da.μ, da.u, da.g, da.p)
 end
 
 function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm::Function)
@@ -208,7 +228,8 @@ function datanorm(base::Baseline; norm=LinearAlgebra.norm::Function)
 end
 
 function extend_solution!(da::DA)
-    idxs = meta(da.data)["last_day_idxs"]-1
+    lastdate = meta(da.data)["lastdate"] - Day(1)
+    idxs = findfirst(lastdate .== timestamp(da.data))
     values(da.p)[idxs+1:end,:] .= values(da.p)[idxs:idxs,:]
 end
 
@@ -216,6 +237,10 @@ function timerange(d::AbstractArray{<:TimeType})
     drange = range(d[1], d[end], step = d[2] - d[1])
     @assert d == drange "d must be equispaced in time"
     drange
+end
+
+function timestep(trange::StepRange{<:TimeType,<:Period})
+    Millisecond(step(trange)).value/Millisecond(Day(1)).value
 end
 
 function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
@@ -227,35 +252,12 @@ function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
         etp.(xq)
 end
 
-function _interpolation(p::AbstractArray{Float64},it::Int,Δt::Float64)
-    # if it == size(p,1)
-    #     p[it,:] + Δt*(p[it,:] -p[it-1,:])
-    # elseif it == 1
-    #     p[it,:] + Δt*(p[it+1,:] -p[it,:])
-    # else
-    #     p[it,:] + Δt*(p[it+1,:] -p[it-1,:])/2
-    # end
-    # if it < size(p,1)
-    #     p=(p[it,:] + p[it+1,:])/2
-    # else
-    #     p[it,:]
-    # end
-    n = size(p, 1)
-    i₁ = min(max(it, 1), n)
-    i₂ = min(max(it + 1, 1), n)
-    p[i₁,:] + (p[i₂,:] - p[i₁,:]) * Δt
-end
-
 "Classic Epidemic Model  Hethcote (2000), added deaths"
 function sir!(du::Vector{Float64}, u::Vector{Float64},
-              p::TimeArray{Float64,2}, t::Float64)
-    it = floor(Int,t) + 1
-    Δt = t - floor(t)
-
-    β,γ,δ = _interpolation(values(p),it,Δt)
-
-    S,I,R,D=u[:]
-    N=sum(u)
+              p::AbstractInterpolation{Float64,2}, t::Float64)
+    β,γ,δ = p(t,1:3)
+    S,I,R,D = u[:]
+    N = sum(u)
     du[1]=-β*I*S/N
     du[2]= β*I*S/N - (γ+δ)*I
     du[3]= γ*I
@@ -263,7 +265,7 @@ function sir!(du::Vector{Float64}, u::Vector{Float64},
     du
 end
 
-function dfdu(u::Vector{Float64}, p::Vector{Float64}, t::Float64)
+function dfdu(u::Vector{Float64}, p::Vector{Float64})
     S,I,R,D = u[:]
     β,γ,δ = p[:]
 
@@ -284,22 +286,12 @@ function dfdu(u::Vector{Float64}, p::Vector{Float64}, t::Float64)
     return A
 end
 
-function sir_adj(v::Vector{Float64}, base::Baseline, t::Float64)
-    it = floor(Int,t) + 1
-    Δt = t - floor(t)
-
-    # data = values(base.data)[it,:]
-    # u = values(base.u)[it,:]
-    # g = values(base.g)[it,:]
-
-    data = _interpolation(values(base.data),it,Δt)
-    u = _interpolation(values(base.u),it,Δt)
-    g = _interpolation(values(base.g),it,Δt)
-    p = _interpolation(values(base.p),it,Δt)
-
-    A = dfdu(u,p,t)
+function sir_adj(v::Vector{Float64}, base::BaselineInterpolation, t::Float64)
+    u = base.u(t,1:4)
+    p = base.p(t,1:3)
+    g = base.g(t,1:4)
+    A = dfdu(u,p)
     dv = -A'*v - g
-
     return dv
 end
 
@@ -330,25 +322,30 @@ function dfda(u::Matrix{Float64})
     return f
 end
 
-function forward(p::TimeArray{Float64,2}, u₀::OrderedDict{Symbol,Float64};
-                 maxiters=1000000::Int)
-    tspan = (0.0,size(p,1)-1.0)
-    trange = range(tspan...,length=size(p,1))
+function forward(t::StepRange{<:TimeType}, p::Array{Float64,2},
+                 u₀::OrderedDict{Symbol,Float64}; maxiters=1000000::Int)
+    Δt = timestep(t)
+    tspan = (0.0, (size(p,1) - 1)*Δt)
+    trange = range(tspan..., length=size(p,1))
     _u₀ = collect(values(u₀))
-    problem = ODEProblem(sir!,_u₀,tspan,p,maxiters=maxiters)
+    interptype = (BSpline(Linear()), NoInterp())
+    itp = scale(interpolate(p, interptype), trange, 1:size(p,2))
+    problem = ODEProblem(sir!, _u₀, tspan, itp, maxiters=maxiters)
     solution = solve(problem)
     u = collect(solution(trange)')
-    TimeArray(timestamp(p),u,collect(keys(u₀)))
+    TimeArray(t, u, collect(keys(u₀)))
 end
 
 function backward(base::Baseline; maxiters=1000000::Int)
-    tspan = (size(base.u,1)-1.0,0.0)
-    trange = range(tspan...,length=size(base.u,1))
+    Δt = timestep(base.time)
+    tspan = ((size(base.u,1) - 1)*Δt, 0.0)
+    trange = reverse(range(tspan...,length=size(base.u,1)))
     v₀ = zeros(size(base.u,2))
-    adj = ODEProblem(sir_adj,v₀,tspan,base,maxiters=maxiters)
-    adj_sol = solve(adj,tstops=trange)
-    v = collect(adj_sol(reverse(trange))')
-    TimeArray(timestamp(base.u),v,colnames(base.u))
+    base_itp = BaselineInterpolation(base, trange)
+    adj = ODEProblem(sir_adj, v₀, tspan, base_itp, maxiters=maxiters)
+    adj_sol = solve(adj, tstops=trange)
+    v = collect(adj_sol(trange)')
+    TimeArray(base.time, v, colnames(base.u))
 end
 
 function gradient(base::Baseline, v::TimeArray)
