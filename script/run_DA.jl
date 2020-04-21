@@ -10,17 +10,17 @@ maxiters     = 1000000;
 tolerance    = 0.001;
 screenfreq   = 10;
 filterfreq   = 1000000;
-sponge       = 0;
-# opt          = Flux.Optimiser(
+sponge       = 21;
+# opt          = Flux.Optimiser
 #                 ExpDecay(1e-6, 0.1, 1000, 1e-8),
 #                 Momentum(1.0, 0.99)
 #                 );
-opt          = Momentum(1e-5, 0.99);
+opt          = Momentum(1e-4, 0.99);
 # opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = false;
-c₀           = Day(14);
-Δc           = Day(8);
-region       = "New York";
+c₀           = Day(49);
+Δc           = Day(100);
+region       = "Bayern";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
