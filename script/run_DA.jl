@@ -10,17 +10,17 @@ maxiters     = 1000000;
 tolerance    = 0.001;
 screenfreq   = 10;
 filterfreq   = 1000000;
-sponge       = 21;
+sponge       = 90;
 # opt          = Flux.Optimiser
 #                 ExpDecay(1e-6, 0.1, 1000, 1e-8),
 #                 Momentum(1.0, 0.99)
 #                 );
-opt          = Momentum(1e-4, 0.99);
+opt          = Momentum(1e-3, 0.99);
 # opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = false;
 c₀           = Day(49);
-Δc           = Day(100);
-region       = "Bayern";
+Δc           = Day(8);
+region       = "New York";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)
@@ -28,9 +28,9 @@ print("   $region\n\n")
 
 ### Load configuration
 dataconfig = Corona.DataConfig();
-include("../config/data.jl");
-if isfile(joinpath(Base.@__DIR__,"../config/paths.jl"))
-    include("../config/paths.jl")
+include(joinpath(pwd(),"config/data.jl"));
+if isfile(joinpath(pwd(),"config/paths.jl"))
+    include(joinpath(pwd(),"config/paths.jl"))
 end;
 
 ### Load data
@@ -131,4 +131,4 @@ end
 da = da_opt
 
 ### Save data assimilation result
-Corona.save(dataconfig, region, da, data = data, opt = opt, interactive = true)
+Corona.save(dataconfig, region, da, data = data, interactive = true)

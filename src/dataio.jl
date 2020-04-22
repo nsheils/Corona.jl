@@ -124,14 +124,10 @@ function save(config::DataConfig, region::AbstractString, da::DA;
 end
 
 function _save(filename::AbstractString, da::DA;
-               data::Union{Missing,DataStruct}=missing,
-               opt=missing)
+               data::Union{Missing,DataStruct}=missing)
     dat = ["da", da]
     if !ismissing(data)
         push!(dat, "data", data)
-    end
-    if !ismissing(opt)
-        push!(dat, "opt", opt)
     end
     FileIO.save( filename, dat...)
 end
