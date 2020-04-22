@@ -20,14 +20,15 @@ show_actions = true;
 
 ### Load configuration
 dataconfig = Corona.DataConfig();
-include("../config/data.jl");
-if isfile(joinpath(Base.@__DIR__,"../config/paths.jl"))
-    include("../config/paths.jl")
+include(joinpath(pwd(),"config/data.jl"));
+if isfile(joinpath(pwd(),"config/paths.jl"))
+    include(joinpath(pwd(),"config/paths.jl"))
 end;
 
 ## Select paths
 fname = Corona.build_filename(dataconfig,region);
 figdir = joinpath(dataconfig.paths["figs"],fname);
+resdir = joinpath(dataconfig.paths["results"],fname);
 mkpath(figdir);
 fig_ext = ["pdf", "png"];
 
@@ -35,19 +36,24 @@ fig_ext = ["pdf", "png"];
 act = CSV.read(joinpath(dataconfig.paths["raw"],"GOV",fname,"actions.csv"));
 
 ## Load data
-data, da = load(joinpath(dataconfig.paths["results"],fname,"da.jld2"), "data", "da");
+data, da = load(joinpath(resdir,"da.jld2"), "data", "da");
 
 ## Compute residual
 J_min = Corona.residual(Corona.baseline(da), relative=true);
 
 ## Set title
-title_str = format(title*", J = {:.3f} %",J_min*100);
+# title_str = format(title*", J = {:.3f} %",J_min*100);
+title_str = title;
+
+## Determine datarange
+datarange = data.outbreakdate:Day(1):data.lastdate;
+datarange_dt = DateTime(data.outbreakdate):step(da.time):DateTime(data.lastdate);
 
 ## Plot results
 let plt = Plots.Plot()
         datarange = data.outbreakdate:Day(1):data.lastdate;
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Confirmed[datarange]),
-                    color=:orange, label="C (data)", Atickfontsize=12, legend=:topleft,
+                    color=:orange, label="C (data)", Atickfontsize=12, legend=:right,
                     minorticks=true);
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Deaths[datarange]),
                     color=:black, label="D (data)");
@@ -75,20 +81,19 @@ let plt = Plots.Plot()
         end
 
         plt
-end
+end;
 
 ## Plot results in log scale
 let plt = Plots.Plot()
-        datarange = data.outbreakdate:Day(1):data.lastdate;
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Confirmed[datarange]) .+ 1,
-                    color=:orange, label="C (data)", Atickfontsize=12, legend=:none, yaxis=:log10);
+                    color=:orange, label="C (data)", Atickfontsize=12, legend=:bottomright, yaxis=:log10);
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Deaths[datarange]) .+ 1,
                     color=:black, label="D (data)");
 
-        plot!(plt, da.u.I .+ da.u.R .+ da.u.D .+ 1.0, color=:orange, lw=3, label="C");
-        plot!(plt, da.u.I .+ 1.0, color=:red, lw=3);
-        plot!(plt, da.u.R .+ 1.0, color=:green, lw=3);
-        plot!(plt, da.u.D .+ 1.0, color=:black, lw=3);
+        plot!(plt, da.u.I[datarange_dt] .+ da.u.R[datarange_dt] .+ da.u.D[datarange_dt] .+ 1.0, color=:orange, lw=3, label="C");
+        plot!(plt, da.u.I[datarange_dt] .+ 1.0, color=:red, lw=3);
+        plot!(plt, da.u.R[datarange_dt] .+ 1.0, color=:green, lw=3);
+        plot!(plt, da.u.D[datarange_dt] .+ 1.0, color=:black, lw=3);
         title!(plt, title_str);
 
         if show_actions
@@ -112,10 +117,10 @@ end
 
 ## Plot β
 let plt = Plots.Plot()
-        plot!(plt, da.p.β, color=:orange, lw=3, label="\\beta");
+        plot!(plt, da.p.β[datarange_dt], color=:orange, lw=3, label="\\beta", legend=:right);
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
-                                α=0.2, color=:grey, label="control", legend=:topleft);
+                                α=0.2, color=:grey, label="control");
 
         if show_actions
             for i=1:size(act,1)
@@ -137,8 +142,8 @@ end
 
 ## Plot δ and γ
 let plt = Plots.Plot()
-        plot!(plt, da.p.γ, color=:blue, lw=3, label="\\gamma", legend=:right);
-        plot!(plt, da.p.δ, color=:black, lw=3, label="\\delta");
+        plot!(plt, da.p.γ[datarange_dt], color=:blue, lw=3, label="\\gamma", legend=:topleft);
+        plot!(plt, da.p.δ[datarange_dt], color=:black, lw=3, label="\\delta");
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
@@ -163,7 +168,7 @@ end
 
 ## Plot sigma
 let plt = Plots.Plot()
-        plot!(plt, da.p.β./(da.p.γ .+ da.p.δ), color=:red, lw=3, label="\\sigma" , legend=:topright)
+        plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma" , legend=:bottomleft)
         ylims!(0,3)
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
@@ -180,7 +185,7 @@ let plt = Plots.Plot()
         display_fig && display(plt)
         if save_fig
             for ext in fig_ext
-                savefig(plt, joinpath(figdir,"da_recovery_rate."*ext))
+                savefig(plt, joinpath(figdir,"da_contact_number."*ext))
             end
         end
 
@@ -199,8 +204,12 @@ end;
 
 ## Plot eigenvalues of A
 let plt = Plots.Plot()
-        plot!(plt, maximum(real.(Λ), dims=2), label="\\lambda max", lw=3, color=:blue)
-        ylims!(plt, -.01, 0.4)
+        plot!(plt, real.(Λ.λ₁)[datarange_dt], label="\\lambda 1", lw=3, color=:orange)
+        plot!(plt, real.(Λ.λ₂)[datarange_dt], label="\\lambda 2", lw=3, color=:blue)
+        plot!(plt, real.(Λ.λ₃)[datarange_dt], label="\\lambda 3", lw=3, color=:green)
+        plot!(plt, real.(Λ.λ₄)[datarange_dt], label="\\lambda 4", lw=3, color=:red)
+
+        ylims!(plt, -.1, 0.4)
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
@@ -223,10 +232,13 @@ let plt = Plots.Plot()
         plt
 end;
 
-## Plot eigenvalues of A22
+## Plot A22
 let plt = Plots.Plot()
-        plot!(plt, A22, label="A22", lw=3, color=:blue)
+        plot!(plt, A22[datarange_dt], label="A22", lw=3, color=:blue)
         # ylims!(plt, -.01, 0.4)
+
+        plot!(plt, timestamp(A22[datarange_dt]), ylims(plt)[1]*ones(size(A22[datarange_dt],1)) , fillrange=0.0,
+                                α=0.2, color=:green, label=:none)
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
@@ -254,9 +266,11 @@ freq = 24*(0:(size(A22,1)/2))/size(A22,1);
 P_A22 = abs.(fft(values(A22)));
 
 let plt = Plots.Plot()
-        sticks!(plt, freq[7:60].^(-1), P_A22[7:60], lw=3, label="FFT(A22)",
+        sticks!(plt, freq.^(-1), P_A22, lw=3, label="FFT(A22)",
                 xaxis="T (days)", legend=:topleft, color=:blue)
         # ylims!(plt, -.01, 0.4)
+        xlims!(2,9)
+        ylims!(0,100)
 
         title!(plt, title_str);
 
@@ -268,4 +282,16 @@ let plt = Plots.Plot()
         end
 
         plt
+end;
+
+## Export simulation result to CSV
+let tah = when(da.u, hour, 0)
+    tad = TimeArray(Date.(timestamp(tah)), values(tah), colnames(tah))
+    writetimearray(tad, joinpath(resdir,"da_SIRD.csv"))
+end;
+
+## Export parameters to CSV
+let tah = when(da.p, hour, 0)
+    tad = TimeArray(Date.(timestamp(tah)), values(tah), colnames(tah))
+    writetimearray(tad, joinpath(resdir,"da_param.csv"))
 end;
