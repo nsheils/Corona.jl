@@ -3,6 +3,7 @@ using LinearAlgebra
 using Flux
 using Formatting
 using Interpolations
+using SmoothingSplines
 
 import Flux.Optimise: apply!
 
@@ -39,8 +40,8 @@ mutable struct Baseline{T<:Real,D<:TimeType}
        size_C = (size(data,2),length(varnames))
        @assert size(C) == size_C "C must have size $size_C"
 
-       @assert size(σ,2) == length(varnames) "σ must have $(length(varnames)) columns"
-       @assert colnames(σ) == varnames "columns of σ must have names $varnames"
+       @assert size(σ,2) == size(data,2) "σ must have $(size(data,2)) columns"
+       @assert colnames(σ) == colnames(data) "columns of σ must have names $(colnames(data))"
 
        @assert size(μ,2) == length(parnames) "μ must have $(length(parnames)) columns"
        @assert colnames(μ) == parnames "columns of μ must have names $parnames"
@@ -88,8 +89,8 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         @assert stop > start "stop date must be after the start date"
         @assert step > Day(0) "step must be a positive time period"
 
-        @assert size(σ,2) == length(varnames) "σ must have $(length(varnames)) columns"
-        @assert colnames(σ) == varnames "columns of σ must have names $varnames"
+        @assert size(σ,2) == size(data,2) "σ must have $(size(data,2)) columns"
+        @assert colnames(σ) == colnames(data) "columns of σ must have names $(colnames(data))"
 
         @assert size(μ,2) == length(parnames) "μ must have $(length(parnames)) columns"
         @assert colnames(μ) == parnames "columns of μ must have names $parnames"
@@ -107,17 +108,23 @@ mutable struct Baseline{T<:Real,D<:TimeType}
             values(_data)[:,j] = _interpolation(timerange(timestamp(data)),
                                     values(data)[:,j], t, interptype, Flat())
         end
+        # data_t = convert.(eltype(t), timestamp(data))
+        # _data_idxs, data_idxs = Corona.overlap(t, data_t)
+        # values(_data)[_data_idxs,:] = values(data)[data_idxs,:]
         meta(_data)["lastdate"] = convert(eltype(t), timestamp(data)[end])
 
         # Initialize forcing window
-        _σ = TimeArray(t,zeros(length(t),length(varnames)),varnames)
+        _σ = TimeArray(t,zeros(size(_data)),colnames(data))
         if ismissing(σ)
-            σ = TimeArray(timestamp(data),ones(size(data,1),length(varnames)),varnames)
+            σ = TimeArray(timestamp(data),ones(size(data,2)),varnames)
         end
         for j=1:size(σ,2)
             values(_σ)[:,j] = _interpolation(timerange(timestamp(σ)),
                                 values(σ)[:,j], t, interptype, 0.0)
         end
+        # σ_t = convert.(eltype(t), timestamp(σ))
+        # _σ_idxs, σ_idxs, _ = Corona.overlap(t, σ_t, data_t)
+        # values(_σ)[_σ_idxs,:] = values(σ)[σ_idxs,:]
 
         # Initialize control window
         _μ = TimeArray(t,zeros(length(t),length(parnames)),parnames)
@@ -224,7 +231,7 @@ function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm:
 end
 
 function datanorm(base::Baseline; norm=LinearAlgebra.norm::Function)
-    norm(values(base.data) * base.C .*values(base.σ))
+    norm(values(base.data) .*values(base.σ) * base.C)
 end
 
 function extend_solution!(da::DA)
@@ -245,11 +252,23 @@ end
 
 function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
                     tq::AbstractVector{<:TimeType}, interptype, extrapscheme)
+        @assert step(t) > Millisecond(0) "step of t must be positive"
         x = datetime2unix(DateTime(t.start)):Second(t.step).value:datetime2unix(DateTime(t.stop))
         xq = datetime2unix.(DateTime.(tq))
         itp = scale(interpolate(u, interptype), x)
         etp = extrapolate(itp, extrapscheme)
         etp.(xq)
+        # spl = fit(SmoothingSpline, float(x), float(u), 2000.0)
+        # SmoothingSplines.predict(spl, float(xq))
+        # uq = similar(xq, Float64)
+        # spl = csaps.CubicSmoothingSpline(x, u, smooth = smooth)
+        # lrng = xq .< x[1]
+        # urng = xq .> x[end]
+        # irng = .!lrng .& .!urng
+        # uq[irng] = spl(xq[irng])
+        # uq[lrng] .= spl([x[1]])
+        # uq[urng] .= spl([x[end]])
+        # uq
 end
 
 "Classic Epidemic Model  Hethcote (2000), added deaths"
@@ -362,7 +381,7 @@ end
 
 function forcing(data::TimeArray{Float64,2}, C::Matrix{Float64},
                  σ::TimeArray{Float64,2}, u::TimeArray{Float64,2})
-    g = (values(u) .* values(σ) * C' - values(data)) * C .* values(σ)
+    g = (values(u) * C' - values(data)) .* values(σ) * C
     TimeArray(timestamp(u), g, colnames(u))
 end
 
