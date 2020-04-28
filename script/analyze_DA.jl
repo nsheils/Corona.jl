@@ -10,12 +10,12 @@ using FFTW
 
 ## Decide region and title
 region = "New York";
-title = "New York City";
+plt_title = "New York City";
 
 ## What to do
 display_fig = true;
 save_fig = true;
-show_window = false;
+show_window = true;
 show_actions = true;
 
 ### Load configuration
@@ -42,8 +42,9 @@ data, da = load(joinpath(resdir,"da.jld2"), "data", "da");
 J_min = Corona.residual(Corona.baseline(da), relative=true);
 
 ## Set title
-# title_str = format(title*", J = {:.3f} %",J_min*100);
-title_str = title;
+# title_str = format(plt_title*", J = {:.3f} %",J_min*100);
+title_str = plt_title*", $(data.lastdate)";
+# title_str = plt_title;
 
 ## Determine datarange
 datarange = data.outbreakdate:Day(1):data.lastdate;
@@ -70,7 +71,7 @@ let plt = Plots.Plot()
             end
         end
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         display_fig && display(plt)
@@ -86,7 +87,7 @@ end;
 ## Plot results in log scale
 let plt = Plots.Plot()
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Confirmed[datarange]) .+ 1,
-                    color=:orange, label="C (data)", Atickfontsize=12, legend=:bottomright, yaxis=:log10);
+                    color=:orange, label="C (data)", Atickfontsize=12, legend=:none, yaxis=:log10);
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Deaths[datarange]) .+ 1,
                     color=:black, label="D (data)");
 
@@ -102,7 +103,7 @@ let plt = Plots.Plot()
             end
         end
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S .+ ylims(plt)[1], fillrange=ylims(plt)[1],
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed[datarange_dt] .+ ylims(plt)[1], fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         display_fig && display(plt)
@@ -117,7 +118,7 @@ end
 
 ## Plot β
 let plt = Plots.Plot()
-        plot!(plt, da.p.β[datarange_dt], color=:orange, lw=3, label="\\beta", legend=:right);
+        plot!(plt, da.p.β[datarange_dt], color=:orange, lw=3, label="\\beta", legend=:topright);
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
@@ -142,7 +143,7 @@ end
 
 ## Plot δ and γ
 let plt = Plots.Plot()
-        plot!(plt, da.p.γ[datarange_dt], color=:blue, lw=3, label="\\gamma", legend=:topleft);
+        plot!(plt, da.p.γ[datarange_dt], color=:blue, lw=3, label="\\gamma", legend=:right);
         plot!(plt, da.p.δ[datarange_dt], color=:black, lw=3, label="\\delta");
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
@@ -168,7 +169,7 @@ end
 
 ## Plot sigma
 let plt = Plots.Plot()
-        plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma" , legend=:bottomleft)
+        plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma" , legend=:topright)
         ylims!(0,3)
 
         show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
@@ -270,7 +271,7 @@ let plt = Plots.Plot()
                 xaxis="T (days)", legend=:topleft, color=:blue)
         # ylims!(plt, -.01, 0.4)
         xlims!(2,9)
-        ylims!(0,100)
+        ylims!(0,50)
 
         title!(plt, title_str);
 
