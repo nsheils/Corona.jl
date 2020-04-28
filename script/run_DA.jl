@@ -18,8 +18,9 @@ sponge       = 90;
 opt          = Momentum(1e-3, 0.99);
 # opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = false;
-c₀           = Day(49);
-Δc           = Day(8);
+#c₀           = Day(49);
+c₀           = missing;
+Δc           = Day(7);
 region       = "New York";
 
 ############################################################
@@ -54,8 +55,12 @@ else
 end;
 
 ### Create windows
-assimtime = data.outbreakdate+c₀:Day(1):min(data.lastdate,data.outbreakdate+c₀+Δc);
-σ = TimeArray(assimtime,ones(length(assimtime),4),[:S,:I,:R,:D]);
+if ismissing(c₀)
+    assimtime = data.lastdate-Δc:Day(1):data.lastdate;
+else
+    assimtime = data.outbreakdate+c₀:Day(1):min(data.lastdate,data.outbreakdate+c₀+Δc);
+end
+σ = TimeArray(assimtime,ones(length(assimtime),2),[:Confirmed,:Deaths]);
 μ = TimeArray(assimtime,ones(length(assimtime),3),[:β,:γ,:δ]);
 
 ### Initialize data assimilation
