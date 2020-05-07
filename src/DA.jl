@@ -237,20 +237,7 @@ mutable struct DA{T<:Real,D<:TimeType}
                     base.u, base.g,base.p, v, δp)
     end
 
-    function DA(da::DA, α::Real)
-        DA(da,α.*da.δp)
-    # function DA(da::DA, p::Array{<:Real,2})
-    #    p = TimeArray(timestamp(da.p), p, colnames(da.p))
-    #    DA(da, p)
-    end
-
-    function DA(da::DA, δp::TimeArray{<:Real,2})
-        DA(da,values(δp))
-    end
-
-    function DA(da::DA, δp::Array{<:Real,2})
-        p = max.(da.p .- δp, 0.0)
-    # function DA(da::DA, p::Array{<:Real,2})
+    function DA(da::DA, p::TimeArray{<:Real,2})
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
         u = forward(da.time, values(p), u₀)
         g = forcing(da.data, da.C ,da.σ ,u)
@@ -263,18 +250,18 @@ function baseline(da::DA)
     Baseline(da.time, da.data, da.C, da.σ, da.μ, da.u, da.g, da.p)
 end
 
-# function update(da::DA, α::Real)
-#     update(da, α.*da.δp)
-# end
-#
-# function update(da::DA, δp::TimeArray{<:Real,2})
-#     update(da, values(δp))
-# end
-#
-# function update(da::DA, δp::Array{<:Real,2})
-#     p = max.(da.p .- δp, 0.0)
-#     DA(da, p)
-# end
+function update(da::DA, α::Real)
+    update(da, α.*da.δp)
+end
+
+function update(da::DA, δp::TimeArray{<:Real,2})
+    update(da, values(δp))
+end
+
+function update(da::DA, δp::Array{<:Real,2})
+    p = max.(da.p .- δp, 0.0)
+    DA(da, p)
+end
 
 function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm::Function)
 # function residual(base::Baseline; relative=false::Bool)
@@ -477,6 +464,5 @@ end
 function apply!(opt, da::DA)
     δp = values(da.δp) .* values(da.μ)
     Δp = apply!(opt, values(da.p), δp)
-    # update(da, Δp)
-    DA(da, Δp)
+    update(da, Δp)
 end
