@@ -5,7 +5,8 @@ using DataFrames
 ###### native data loader #################
 
 function _load_data(source::Val{:native}, region::AbstractString, path::AbstractString)
-    fn = _build_filename(region)
+    # fn = _build_filename(region)
+    fn = region
     fp = rstrip(path,'/')*"/"*fn*".csv"
     if fn != region
         @warn("loading data from `"*fp*"'")
