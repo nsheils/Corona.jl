@@ -4,6 +4,7 @@ using Flux
 using Formatting
 using Interpolations
 using SmoothingSplines
+using SparseArrays
 
 import Flux.Optimise: apply!
 
@@ -65,7 +66,8 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 step=Day(1)::Period,
                 σ=missing::Union{Missing,TimeArray{<:Real,2,<:TimeType}},
                 μ=missing::Union{Missing,TimeArray{<:Real,2,<:TimeType}},
-                interptype=BSpline(Cubic(Line(OnGrid())))::Interpolations.InterpolationType
+                # dataw=step::Period,
+                interptype=BSpline(Linear())::Union{Interpolations.InterpolationType,Tuple{Vararg{Interpolations.InterpolationType}}}
                 )
 
         @assert length(u₀) == length(varnames) "u₀ must have length $(length(varnames))"
@@ -95,6 +97,12 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         @assert size(μ,2) == length(parnames) "μ must have $(length(parnames)) columns"
         @assert colnames(μ) == parnames "columns of μ must have names $parnames"
 
+        if interptype isa Tuple
+            @assert length(interptype) == size(data,2) "interptype must be a tuple with $(size(data,2)) elements"
+        else
+            interptype = ntuple(i -> interptype, size(data,2))
+        end
+
         # time
         if step < Day(1)
             t = DateTime(start):step:DateTime(stop)
@@ -104,14 +112,24 @@ mutable struct Baseline{T<:Real,D<:TimeType}
 
         # Copy data to working data array ux
         _data = TimeArray(t,zeros(length(t),size(data,2)),colnames(data),Dict{String,Any}())
+        # for j=1:size(data,2)
+        #     values(_data)[:,j] = _interpolation(timerange(timestamp(data)),
+        #                             values(data)[:,j], t)
+        # end
         for j=1:size(data,2)
             values(_data)[:,j] = _interpolation(timerange(timestamp(data)),
-                                    values(data)[:,j], t, interptype, Flat())
+                                    values(data)[:,j], t + Millisecond(step)/2,
+                                    #BSpline(Constant()), Flat())
+                                    interptype[j], Flat())
         end
-        # data_t = convert.(eltype(t), timestamp(data))
+        data_t = convert.(eltype(t), timestamp(data))
         # _data_idxs, data_idxs = Corona.overlap(t, data_t)
         # values(_data)[_data_idxs,:] = values(data)[data_idxs,:]
         meta(_data)["lastdate"] = convert(eltype(t), timestamp(data)[end])
+
+        # expfun = exp(-32.0*(Dates.toms(t .- data_t[i])./Dates.toms(datawidth)).^2)
+        # values(_data) .+=  values(data)[i,:].*expfun
+        # values(_σ)
 
         # Initialize forcing window
         _σ = TimeArray(t,zeros(size(_data)),colnames(data))
@@ -120,20 +138,35 @@ mutable struct Baseline{T<:Real,D<:TimeType}
         end
         for j=1:size(σ,2)
             values(_σ)[:,j] = _interpolation(timerange(timestamp(σ)),
-                                values(σ)[:,j], t, interptype, 0.0)
+                                values(σ)[:,j], t, BSpline(Linear()), 0.0)
         end
-        # σ_t = convert.(eltype(t), timestamp(σ))
+        #σ_t = convert.(eltype(t), timestamp(σ))
         # _σ_idxs, σ_idxs, _ = Corona.overlap(t, σ_t, data_t)
         # values(_σ)[_σ_idxs,:] = values(σ)[σ_idxs,:]
+        # σ_data = similar(values(data))
+        # for j=1:size(data,2)
+        #     σ_data[:,j] = _interpolation(timerange(timestamp(σ)),
+        #                             values(σ)[:,j], data_t, BSpline(Linear()), 0.0)
+        # end
+
+        # not_σ = ones(size(_data))
+        # for i=1:size(data,1)
+        #     not_σ .*= 1.0 .- exp.(-32.0*(Dates.toms.(t .- data_t[i])./Dates.toms.(dataw)).^2)
+        # end
+        # values(_σ) .*= 1.0 .- not_σ
 
         # Initialize control window
         _μ = TimeArray(t,zeros(length(t),length(parnames)),parnames)
         if ismissing(μ)
             μ = TimeArray(timestamp(data),ones(size(data,1),length(parnames)),parnames)
         end
+        # for j=1:size(μ,2)
+        #     values(_μ)[:,j] = _interpolation(timerange(timestamp(μ)),
+        #                         values(μ)[:,j], t, smooth = 1.0, extrapscheme = 0.0)
+        # end
         for j=1:size(μ,2)
             values(_μ)[:,j] = _interpolation(timerange(timestamp(μ)),
-                                values(μ)[:,j], t, interptype, 0.0)
+                                values(μ)[:,j], t, BSpline(Linear()), 0.0)
         end
 
         # Initialize model parameters
@@ -144,9 +177,13 @@ mutable struct Baseline{T<:Real,D<:TimeType}
                 values(_p)[:,k] .= p[v]
             end
         else
+            # for j=1:size(p,2)
+            #     values(_p)[:,j] = _interpolation(timerange(timestamp(p)),
+            #                         values(p)[:,j], t, smooth = 1.0)
+            # end
             for j=1:size(p,2)
                 values(_p)[:,j] = _interpolation(timerange(timestamp(p)),
-                                    values(p)[:,j], t, interptype, Flat())
+                                    values(p)[:,j], t, BSpline(Linear()), Flat())
             end
         end
 
@@ -202,6 +239,9 @@ mutable struct DA{T<:Real,D<:TimeType}
 
     function DA(da::DA, α::Real)
         DA(da,α.*da.δp)
+    # function DA(da::DA, p::Array{<:Real,2})
+    #    p = TimeArray(timestamp(da.p), p, colnames(da.p))
+    #    DA(da, p)
     end
 
     function DA(da::DA, δp::TimeArray{<:Real,2})
@@ -210,6 +250,7 @@ mutable struct DA{T<:Real,D<:TimeType}
 
     function DA(da::DA, δp::Array{<:Real,2})
         p = max.(da.p .- δp, 0.0)
+    # function DA(da::DA, p::Array{<:Real,2})
         u₀ = OrderedDict(colnames(da.u) .=> values(da.u)[1,:])
         u = forward(da.time, values(p), u₀)
         g = forcing(da.data, da.C ,da.σ ,u)
@@ -222,8 +263,26 @@ function baseline(da::DA)
     Baseline(da.time, da.data, da.C, da.σ, da.μ, da.u, da.g, da.p)
 end
 
+# function update(da::DA, α::Real)
+#     update(da, α.*da.δp)
+# end
+#
+# function update(da::DA, δp::TimeArray{<:Real,2})
+#     update(da, values(δp))
+# end
+#
+# function update(da::DA, δp::Array{<:Real,2})
+#     p = max.(da.p .- δp, 0.0)
+#     DA(da, p)
+# end
+
 function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm::Function)
+# function residual(base::Baseline; relative=false::Bool)
     J = norm(values(base.g))
+    # J = 0.5 * norm(values(base.g), 2)
+    # d = max.(values(base.data), 1)
+    # J = 0.5 * norm((values(base.u) * base.C' - values(base.data))
+    #                 .* values(base.σ) ./ d * base.C, 2)
     if relative
         J = J/datanorm(base, norm=norm)
     end
@@ -232,6 +291,8 @@ end
 
 function datanorm(base::Baseline; norm=LinearAlgebra.norm::Function)
     norm(values(base.data) .*values(base.σ) * base.C)
+# function datanorm(base::Baseline)
+#     0.5 * norm(values(base.data) .*values(base.σ) * base.C, 2)
 end
 
 function extend_solution!(da::DA)
@@ -247,27 +308,43 @@ function timerange(d::AbstractArray{<:TimeType})
 end
 
 function timestep(trange::StepRange{<:TimeType,<:Period})
-    Millisecond(step(trange)).value/Millisecond(Day(1)).value
+    Dates.toms(step(trange))/Dates.toms(Day(1))
 end
+
+import Interpolations.interpolate
+interpolate(range::AbstractRange, vs::AbstractVector, interptype::BSpline) = scale(interpolate(vs, interptype), range)
 
 function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
                     tq::AbstractVector{<:TimeType}, interptype, extrapscheme)
+# function _interpolation(t::AbstractRange{<:TimeType}, u::AbstractVector{<:Real},
+#                     tq::AbstractVector{<:TimeType}; smooth=nothing::Union{Nothing,<:Real},
+#                     extrapscheme=:fill::Union{Symbol,<:Real})
         @assert step(t) > Millisecond(0) "step of t must be positive"
         x = datetime2unix(DateTime(t.start)):Second(t.step).value:datetime2unix(DateTime(t.stop))
         xq = datetime2unix.(DateTime.(tq))
-        itp = scale(interpolate(u, interptype), x)
+        #itp = scale(interpolate(u, interptype), x)
+        itp = interpolate(x, u, interptype)
         etp = extrapolate(itp, extrapscheme)
         etp.(xq)
         # spl = fit(SmoothingSpline, float(x), float(u), 2000.0)
         # SmoothingSplines.predict(spl, float(xq))
-        # uq = similar(xq, Float64)
         # spl = csaps.CubicSmoothingSpline(x, u, smooth = smooth)
         # lrng = xq .< x[1]
         # urng = xq .> x[end]
         # irng = .!lrng .& .!urng
+        # uq = similar(xq, Float64)
         # uq[irng] = spl(xq[irng])
-        # uq[lrng] .= spl([x[1]])
-        # uq[urng] .= spl([x[end]])
+        # if extrapscheme isa Symbol
+        #     if extrapscheme == :fill
+        #         uq[lrng] .= spl([x[1]])
+        #         uq[urng] .= spl([x[end]])
+        #     else
+        #         error("unknown extrapscheme $(extrapscheme)")
+        #     end
+        # else
+        #     uq[lrng] .= extrapscheme
+        #     uq[urng] .= extrapscheme
+        # end
         # uq
 end
 
@@ -281,7 +358,7 @@ function sir!(du::Vector{Float64}, u::Vector{Float64},
     du[2]= β*I*S/N - (γ+δ)*I
     du[3]= γ*I
     du[4]= δ*I
-    du
+    return du
 end
 
 function dfdu(u::Vector{Float64}, p::Vector{Float64})
@@ -351,6 +428,7 @@ function forward(t::StepRange{<:TimeType}, p::Array{Float64,2},
     itp = scale(interpolate(p, interptype), trange, 1:size(p,2))
     problem = ODEProblem(sir!, _u₀, tspan, itp, maxiters=maxiters)
     solution = solve(problem)
+    # solution = solve(problem, RK4(), dt = 1.0, adaptive = false)
     u = collect(solution(trange)')
     TimeArray(t, u, collect(keys(u₀)))
 end
@@ -363,11 +441,13 @@ function backward(base::Baseline; maxiters=1000000::Int)
     base_itp = BaselineInterpolation(base, trange)
     adj = ODEProblem(sir_adj, v₀, tspan, base_itp, maxiters=maxiters)
     adj_sol = solve(adj, tstops=trange)
+    # adj_sol = solve(adj, RK4(), dt = 1.0, adaptive = false)
     v = collect(adj_sol(trange)')
     TimeArray(base.time, v, colnames(base.u))
 end
 
 function gradient(base::Baseline, v::TimeArray)
+# function gradient(base::Baseline, v::TimeArray; λ=0.001::Real)
     u = values(base.u)
     p = values(base.p)
     f = dfda(u)
@@ -376,17 +456,27 @@ function gradient(base::Baseline, v::TimeArray)
         δp = δp + values(v)[:,i] .* f[:,i,:]
     end
     δp ./= maximum(abs.(δp))
+    # N = size(p,1)
+    # D = spdiagm(N, N, 0 => -1*ones(N - 1), 1 => ones(N - 1))
+    # δp = δp/maximum(abs.(δp)) - D'*sign.(D*p)*λ
     TimeArray(timestamp(base.p), δp, colnames(base.p))
 end
 
 function forcing(data::TimeArray{Float64,2}, C::Matrix{Float64},
                  σ::TimeArray{Float64,2}, u::TimeArray{Float64,2})
     g = (values(u) * C' - values(data)) .* values(σ) * C
+    # λ = 100000.0
+    # DD(N) = spdiagm(N, N, -1 => -ones(N - 2), 0 => 2*ones(N - 1), 1 => -ones(N - 2))
+    # g = (values(u) * C' - values(data)) .* values(σ) * C
+            # + λ * DD(size(u,1)) * values(u)
+    # d = max.(values(data), 1)
+    # g = (values(u) * C' - values(data)) .* (values(σ) ./ d).^2 * C
     TimeArray(timestamp(u), g, colnames(u))
 end
 
 function apply!(opt, da::DA)
     δp = values(da.δp) .* values(da.μ)
     Δp = apply!(opt, values(da.p), δp)
+    # update(da, Δp)
     DA(da, Δp)
 end
