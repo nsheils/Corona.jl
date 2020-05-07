@@ -263,23 +263,19 @@ function update(da::DA, δp::Array{<:Real,2})
     DA(da, p)
 end
 
-function residual(base::Baseline; relative=false::Bool, norm=LinearAlgebra.norm::Function)
-# function residual(base::Baseline; relative=false::Bool)
-    J = norm(values(base.g))
-    # J = 0.5 * norm(values(base.g), 2)
+function residual(base::Baseline; relative=false::Bool)
+    J = 0.5 * norm(values(base.g), 2)
     # d = max.(values(base.data), 1)
     # J = 0.5 * norm((values(base.u) * base.C' - values(base.data))
     #                 .* values(base.σ) ./ d * base.C, 2)
     if relative
-        J = J/datanorm(base, norm=norm)
+        J = J/datanorm(base)
     end
     J
 end
 
-function datanorm(base::Baseline; norm=LinearAlgebra.norm::Function)
-    norm(values(base.data) .*values(base.σ) * base.C)
-# function datanorm(base::Baseline)
-#     0.5 * norm(values(base.data) .*values(base.σ) * base.C, 2)
+function datanorm(base::Baseline)
+    0.5 * norm(values(base.data) .*values(base.σ) * base.C, 2)
 end
 
 function extend_solution!(da::DA)
