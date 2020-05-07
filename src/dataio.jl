@@ -1,6 +1,5 @@
 using JLD2, FileIO
 using DataFrames
-using DataStructures
 using Unicode
 
 ###### structures #################

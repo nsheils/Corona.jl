@@ -1,10 +1,8 @@
 using DifferentialEquations
 using LinearAlgebra
 using Flux
-using Formatting
 using Interpolations
-using SmoothingSplines
-using SparseArrays
+# using SparseArrays
 
 import Flux.Optimise: apply!
 
