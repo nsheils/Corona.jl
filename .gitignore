@@ -14,5 +14,6 @@ raw
 results
 figs
 
-# Paths config
+# Config files
 config/paths.jl
+config/data.jl

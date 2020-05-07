@@ -1,5 +1,5 @@
 ##### Paths configuration file #####
-# Modify with your preferred paths and save as 'config/paths.jl'
+# Copy this file to 'config/paths.jl' and modify as needed
 
 push!(dataconfig.paths,
     "raw" => "raw",
