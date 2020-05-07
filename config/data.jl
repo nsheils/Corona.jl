@@ -4,6 +4,7 @@
 push!(dataconfig.sources,
     "Germany" => "JHU",
     "Bayern" => "RKI",
+    "NRW" => "RKI",
     "Italy" => "JHU",
     "France" => "JHU",
     "China" => "JHU",
@@ -22,6 +23,7 @@ push!(dataconfig.loaders,
 
 # data dirs by source
 push!(dataconfig.data_dirs,
+    "native" => "native",
     "JHU" => "JHU",
     "RKI" => "RKI",
 )
@@ -29,14 +31,17 @@ push!(dataconfig.data_dirs,
 # filename builder configuration
 push!(dataconfig.args_filename_builder,
     "Bayern" => ("Bayern","Germany"),
+    "NRW" => ("Nordrhein-Westphalen","Germany"),
     "King" => ("King","Washington","US"),
     "New York" => ("New York","New York","US"),
     "Miami" => ("Miami-Dade","Florida","US"),
+    "Laputa" => ("Laputa","Balnibarbi"),
 )
 
 # data loader arguments by region
 push!(dataconfig.args_data_loader,
     "Bayern" => "Bayern",
+    "NRW" => "Nordrhein-Westphalen",
     "France" => (r"^$","France"),
     "King" => ("King","Washington","US"),
     "New York" => ("New York","New York","US"),
@@ -46,10 +51,12 @@ push!(dataconfig.args_data_loader,
 # population loader arguments by region
 push!(dataconfig.args_population_loader,
     "Bayern" => ("Bayern","Germany"),
+    "NRW" => ("Nordrhein-Westphalen","Germany"),
     "France" => (r"^$","France"),
     "King" => ("King","Washington"),
     "New York" => ("New York","New York"),
     "Miami" => ("Miami-Dade","Florida"),
+    "Laputa" => ("Laputa","Balnibarbi"),
 )
 
 # data maps by loader
