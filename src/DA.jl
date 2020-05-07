@@ -401,30 +401,28 @@ function dfda(u::Matrix{Float64})
     return f
 end
 
-function forward(t::StepRange{<:TimeType}, p::Array{Float64,2},
-                 u₀::OrderedDict{Symbol,Float64}; maxiters=1000000::Int)
+function forward(t::StepRange{<:TimeType}, p::Array{Float64,2}, u₀::OrderedDict{Symbol,Float64})
     Δt = timestep(t)
     tspan = (0.0, (size(p,1) - 1)*Δt)
     trange = range(tspan..., length=size(p,1))
     _u₀ = collect(values(u₀))
     interptype = (BSpline(Linear()), NoInterp())
     itp = scale(interpolate(p, interptype), trange, 1:size(p,2))
-    problem = ODEProblem(sir!, _u₀, tspan, itp, maxiters=maxiters)
-    solution = solve(problem)
-    # solution = solve(problem, RK4(), dt = 1.0, adaptive = false)
+    problem = ODEProblem(sir!, _u₀, tspan, itp)
+    solution = solve(problem, RK4(), dt=1.0, adaptive=false)
     u = collect(solution(trange)')
     TimeArray(t, u, collect(keys(u₀)))
 end
 
-function backward(base::Baseline; maxiters=1000000::Int)
+function backward(base::Baseline)
     Δt = timestep(base.time)
     tspan = ((size(base.u,1) - 1)*Δt, 0.0)
     trange = reverse(range(tspan...,length=size(base.u,1)))
     v₀ = zeros(size(base.u,2))
     base_itp = BaselineInterpolation(base, trange)
-    adj = ODEProblem(sir_adj, v₀, tspan, base_itp, maxiters=maxiters)
+    adj = ODEProblem(sir_adj, v₀, tspan, base_itp)
     adj_sol = solve(adj, tstops=trange)
-    # adj_sol = solve(adj, RK4(), dt = 1.0, adaptive = false)
+    adj_sol = solve(adj, RK4(), dt=1.0, adaptive=false)
     v = collect(adj_sol(trange)')
     TimeArray(base.time, v, colnames(base.u))
 end
