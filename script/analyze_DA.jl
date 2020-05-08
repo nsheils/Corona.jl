@@ -9,13 +9,13 @@ using CSV
 using FFTW
 
 ## Decide region and title
-region = "New York";
-plt_title = "New York City";
+region = "Laputa";
+plt_title = "Laputa";
 
 ## What to do
 display_fig = true;
 save_fig = true;
-show_window = true;
+show_window = false;
 show_actions = true;
 
 ### Load configuration
@@ -34,6 +34,7 @@ fig_ext = ["pdf", "png"];
 
 ## Load actions
 act = CSV.read(joinpath(dataconfig.paths["raw"],"GOV",fname,"actions.csv"));
+act_colors =  [:darkolivegreen, :palegreen2, :khaki, :darkslategray4, :sienna4];
 
 ## Load data
 data, da = load(joinpath(resdir,"da.jld2"), "data", "da");
@@ -50,24 +51,35 @@ title_str = plt_title*", $(data.lastdate)";
 datarange = data.outbreakdate:Day(1):data.lastdate;
 datarange_dt = DateTime(data.outbreakdate):step(da.time):DateTime(data.lastdate);
 
+## Determine result range
+resrange = data.outbreakdate:Day(1):data.lastdate+Day(14);
+resrange_dt = DateTime(resrange.start):step(da.time):DateTime(resrange.stop);
+
+##
+# resrange_dt = assimtime;
+# datarange = Date.(assimtime);
+
+## Determine window range
+# winrange = findwhen(da.σ.Confirmed[datarange_dt] .> eps());
+
 ## Plot results
 let plt = Plots.Plot()
-        datarange = data.outbreakdate:Day(1):data.lastdate;
+
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Confirmed[datarange]),
-                    color=:orange, label="C (data)", Atickfontsize=12, legend=:right,
+                    color=:orange, label="C (Confirmed) - data", Atickfontsize=12, legend=:topleft,
                     minorticks=true);
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Deaths[datarange]),
-                    color=:black, label="D (data)");
+                    color=:black, label="D (Deaths) - data");
 
-        plot!(plt, da.u.I .+ da.u.R .+ da.u.D, color=:orange, lw=3, label="C");
-        plot!(plt, da.u.I, color=:red, lw=3);
-        plot!(plt, da.u.R, color=:green, lw=3);
-        plot!(plt, da.u.D, color=:black, lw=3);
+        plot!(plt, da.u.I[resrange_dt] .+ da.u.R[resrange_dt] .+ da.u.D[resrange_dt], color=:orange, lw=3, label="C (Confirmed)");
+        plot!(plt, da.u.I[resrange_dt], color=:red, lw=3, label="I (Infectives)");
+        plot!(plt, da.u.R[resrange_dt], color=:green, lw=3, label="R (Recovered)");
+        plot!(plt, da.u.D[resrange_dt], color=:black, lw=3, label="D (Deaths)");
         title!(plt, title_str);
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -86,6 +98,7 @@ end;
 
 ## Plot results in log scale
 let plt = Plots.Plot()
+
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Confirmed[datarange]) .+ 1,
                     color=:orange, label="C (data)", Atickfontsize=12, legend=:none, yaxis=:log10);
         scatter!(plt, DateTime.(timestamp(data.cases[datarange])), values(data.cases.Deaths[datarange]) .+ 1,
@@ -99,7 +112,7 @@ let plt = Plots.Plot()
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -118,16 +131,17 @@ end
 
 ## Plot β
 let plt = Plots.Plot()
-        plot!(plt, da.p.β[datarange_dt], color=:orange, lw=3, label="\\beta", legend=:topright);
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
-                                α=0.2, color=:grey, label="control");
+        plot!(plt, da.p.β[datarange_dt], color=:orange, lw=3, label="\\beta (Contact rate)", legend=:topright);
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=2, ls=:dash, color = act_colors[i])
             end
         end
+
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed, fillrange=ylims(plt)[1],
+                                α=0.2, color=:grey, label="control");
 
         title!(plt, title_str);
 
@@ -143,15 +157,16 @@ end
 
 ## Plot δ and γ
 let plt = Plots.Plot()
-        plot!(plt, da.p.γ[datarange_dt], color=:blue, lw=3, label="\\gamma", legend=:right);
+
+        plot!(plt, da.p.γ[datarange_dt], color=:blue, lw=3, label="\\gamma", legend=:topleft);
         plot!(plt, da.p.δ[datarange_dt], color=:black, lw=3, label="\\delta");
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed[datarange_dt], fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action], lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -169,15 +184,20 @@ end
 
 ## Plot sigma
 let plt = Plots.Plot()
-        plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma" , legend=:topright)
+
+        plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma (Contact number)" , legend=:topright)
         ylims!(0,3)
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
+        plot!(plt, timestamp(da.p.β[datarange_dt]), ones(size(da.p.β[datarange_dt],1)) , fillrange=ylims(plt)[1],
+                                α=0.2, color=:green, label=:none)
+
+
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action], lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -212,12 +232,12 @@ let plt = Plots.Plot()
 
         ylims!(plt, -.1, 0.4)
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -226,7 +246,7 @@ let plt = Plots.Plot()
         display_fig && display(plt)
         if save_fig
             for ext in fig_ext
-                savefig(plt, joinpath(figdir,"da_lambda_max."*ext))
+                savefig(plt, joinpath(figdir,"da_lambda."*ext))
             end
         end
 
@@ -241,12 +261,12 @@ let plt = Plots.Plot()
         plot!(plt, timestamp(A22[datarange_dt]), ylims(plt)[1]*ones(size(A22[datarange_dt],1)) , fillrange=0.0,
                                 α=0.2, color=:green, label=:none)
 
-        show_window && plot!(plt, ylims(plt)[2] .* da.σ.S, fillrange=ylims(plt)[1],
+        show_window && plot!(plt, ylims(plt)[2] .* da.σ.Confirmed, fillrange=ylims(plt)[1],
                                 α=0.2, color=:grey, label="control");
 
         if show_actions
             for i=1:size(act,1)
-                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] , lw=3)
+                    vline!(plt, [DateTime(act[i,:Date])], label=act[i,:Action] ,  lw=2, ls=:dash, color = act_colors[i])
             end
         end
 
@@ -268,10 +288,11 @@ P_A22 = abs.(fft(values(A22)));
 
 let plt = Plots.Plot()
         sticks!(plt, freq.^(-1), P_A22, lw=3, label="FFT(A22)",
-                xaxis="T (days)", legend=:topleft, color=:blue)
+                xaxis="T (days)", legend=:top, color=:blue)
         # ylims!(plt, -.01, 0.4)
-        xlims!(2,9)
-        ylims!(0,50)
+
+        xlims!(plt,2,9)
+        ylims!(plt,0,10)
 
         title!(plt, title_str);
 
