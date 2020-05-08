@@ -4,6 +4,10 @@
 *.jl.mem
 deps/deps.jl
 
+# Hidden files
+.*
+!.gitignore
+
 # Temporary files
 *~
 *.swp
