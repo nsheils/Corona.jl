@@ -39,7 +39,7 @@ For a quick start, use `config/example-paths.jl` in your Corona.jl installation 
 Move to the installation folder and execute
 
   ```julia
-    include("scripts/run_DA.jl")
+    include("script/run_DA.jl")
   ```
 
 from the Julia REPL.
@@ -48,7 +48,7 @@ from the Julia REPL.
 Move to the installation folder (if you are not already there) and execute
 
   ```julia
-    include("scripts/run_DA.jl")
+    include("script/run_DA.jl")
   ```
 
 from the Julia REPL.
