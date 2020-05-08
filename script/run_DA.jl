@@ -10,18 +10,12 @@ using Formatting
 maxiters     = 100000;
 tolerance    = 0.001;
 screenfreq   = 10;
-# roffreq      = 100000;
-# rofparam     = 0.005;
 sponge       = 90;
-# opt          = Flux.Optimiser
-#                 ExpDecay(1e-6, 0.1, 1000, 1e-8),
-#                 Momentum(1.0, 0.99)
-#                 );
 opt          = Momentum(1e-3, 0.99);
 # opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = true;
 c₀           = Day(0);
-#c₀           = missing;
+#c₀           = missing; -> lastdate
 Δc           = Day(1000);
 region       = "Laputa";
 
@@ -57,14 +51,6 @@ else
 end;
 
 ### Create windows
-# if !ismissing(c₀)
-#    assimtime = data.lastdate-Δc:Day(1):data.lastdate;
-# else
-#     assimtime = data.outbreakdate+c₀:Day(1):min(data.lastdate,data.outbreakdate+c₀+Δc);
-# end
-# σ = TimeArray(assimtime,ones(length(assimtime),4),[:S,:I,:R,:D]);
-# μ = TimeArray(assimtime,ones(length(assimtime),3),[:β,:γ,:δ]);
-
 if ismissing(c₀)
     d₀ = data.lastdate
 else
@@ -82,7 +68,6 @@ w[assimtime .> DateTime(data.lastdate)] .= 0.0;
 base = Corona.Baseline(data.cases, init_u, init_p;
                 C = data.map, start = data.outbreakdate,
                 stop = timestamp(data.cases)[end] + Day(sponge),
-                #step = Hour(1), σ = σ, μ = μ, dataw = Hour(24));
                 step = Hour(1), σ = σ, μ = μ,
                 interptype = SteffenMonotonicInterpolation());
 
@@ -101,7 +86,6 @@ println("Assimilation time: $assimtime\n")
 ### Initialize some variables
 J = Vector{Union{Missing,Float64}}(missing,maxiters);
 J_ini = Corona.datanorm(base);
-# J_ini = 1.0;
 J_min = Inf;
 J_argmin = 1;
 i_rof = 0;
@@ -120,13 +104,6 @@ try
         Corona.extend_solution!(da_run)
 
         if J[i] < J_min
-            # if i - i_rof >= roffreq
-            #     p = Corona.ROF(values(da_run.p), rofparam)
-            #     da_run = Corona.DA(da_run, p)
-            #     i_rof = i
-            #     println("  ... filtering")
-            # end
-            # convegence = (log10(J_min) - log10(J[i])) / (log10(i) - log10(J_argmin))
             J_min = J[i]
             J_argmin = i
             da_opt = da_run

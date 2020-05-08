@@ -55,13 +55,6 @@ datarange_dt = DateTime(data.outbreakdate):step(da.time):DateTime(data.lastdate)
 resrange = data.outbreakdate:Day(1):data.lastdate+Day(14);
 resrange_dt = DateTime(resrange.start):step(da.time):DateTime(resrange.stop);
 
-##
-# resrange_dt = assimtime;
-# datarange = Date.(assimtime);
-
-## Determine window range
-# winrange = findwhen(da.σ.Confirmed[datarange_dt] .> eps());
-
 ## Plot results
 let plt = Plots.Plot()
 
