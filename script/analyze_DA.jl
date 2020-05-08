@@ -179,7 +179,7 @@ end
 let plt = Plots.Plot()
 
         plot!(plt, da.p.β[datarange_dt]./(da.p.γ[datarange_dt] .+ da.p.δ[datarange_dt]), color=:red, lw=3, label="\\sigma (Contact number)" , legend=:topright)
-        ylims!(0,3)
+        ylims!(plt,0,3)
 
         plot!(plt, timestamp(da.p.β[datarange_dt]), ones(size(da.p.β[datarange_dt],1)) , fillrange=ylims(plt)[1],
                                 α=0.2, color=:green, label=:none)
