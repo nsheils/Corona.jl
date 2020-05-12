@@ -6,7 +6,7 @@ You can get started with Corona.jl in a few steps:
 
 1. [Install Corona.jl](#installing-coronajl)
 2. [Install the dependecies](#installing-dependencies)
-3. [Define data directories](#defining-data-directories)
+3. [Prepare data](#preparing-data)
 3. [Run the data assimilation](#running-the-data-assimilation)
 4. [Analyze the results](#analyzing-the-results)
 
@@ -32,11 +32,15 @@ Execute
 
 from the Julia REPL.
 
-### Defining data directories
-For a quick start, use `config/example-paths.jl` in your Corona.jl installation folder.
+### Preparing data
+
+1. Provide your preferred data paths in `config/paths.jl` as shown in `config/example-paths.jl`.
+2. Provide information on the data sources in `config/data.jl` following the structure of `config/example-data.jl`.
+
+For a quick start, you can use the fake data in the files `raw/native/example-Laputa.csv` and `raw/example-population.csv`, by copying them to `raw/native/Laputa.csv` and `raw/population.csv`, respectively.
 
 ### Running the data assimilation
-Move to the installation folder and execute
+Move to the installation folder, modify the Julia script `script/run_DA.jl` as desired and execute
 
   ```julia
     include("script/run_DA.jl")
@@ -45,10 +49,10 @@ Move to the installation folder and execute
 from the Julia REPL.
 
 ### Analyzing the results 
-Move to the installation folder (if you are not already there) and execute
+Move to the installation folder (if you are not already there), modify the Julia script `script/analyze_DA.jl` as desired and execute
 
   ```julia
-    include("script/run_DA.jl")
+    include("script/analyze_DA.jl")
   ```
 
 from the Julia REPL.
