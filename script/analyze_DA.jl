@@ -9,8 +9,8 @@ using CSV
 using FFTW
 
 ## Decide region and title
-region = "Laputa";
-plt_title = "Laputa";
+region = "King";
+plt_title = "KingCounty";
 
 ## What to do
 display_fig = true;

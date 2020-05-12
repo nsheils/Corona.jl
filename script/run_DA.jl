@@ -1,3 +1,6 @@
+#push!(LOAD_PATH,"/Users/nsheils/OneDrive - savvysherpa.com/COVID-19/AdjointDataAssimilation")
+#cd("/Users/nsheils/OneDrive - savvysherpa.com/COVID-19/AdjointDataAssimilation/Corona.jl")
+
 using Corona
 using Flux
 using Dates
@@ -9,15 +12,15 @@ using Formatting
 ### Parameters
 maxiters     = 100000;
 tolerance    = 0.001;
-screenfreq   = 10;
-sponge       = 90;
+screenfreq   = 10; #how frequently to print convegence
+sponge       = 90; #how many days out to estimate
 opt          = Momentum(1e-3, 0.99);
 # opt          = NADAM(1e-12, (0.89, 0.995))
 coldstart    = true;
-c₀           = Day(0);
+c₀           = Day(0); #center of window
 #c₀           = missing; -> lastdate
-Δc           = Day(1000);
-region       = "Laputa";
+Δc           = Day(10); #size of window
+region       = "Hennepin";
 
 ############################################################
 printstyled("C O R O N A",bold=true,color=:blue)

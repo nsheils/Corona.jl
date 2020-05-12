@@ -22,6 +22,7 @@ You can get started with Corona.jl in a few steps:
   ```julia
   push!(LOAD_PATH,"/path/to/julia/modules/Corona")
   ```
+  where "/path/to/julia/modules/Corona" is the folder containing Corona.jl
 
 ### Installing dependencies
 Execute
